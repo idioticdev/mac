@@ -1,0 +1,8 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(bd update:*)",
+      "Bash(bd close:*)"
+    ]
+  }
+}

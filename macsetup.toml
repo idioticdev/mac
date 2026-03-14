@@ -2,9 +2,17 @@
 # macsetup.toml — Declarative macOS machine configuration
 # ============================================================================
 # One config to rule them all: packages, dotfiles, system defaults, and more.
-# Run:  ./macsetup.sh              (uses ./macsetup.toml)
-# Run:  ./macsetup.sh my-cfg.toml  (uses custom config)
+# Run:  macsetup apply                      (uses ./macsetup.toml)
+# Run:  macsetup apply -c ~/macsetup.toml   (uses custom config)
 # ============================================================================
+
+# ---------- Template inheritance --------------------------------------------
+# Extend a base template — packages/defaults are merged, your config wins.
+# Useful for layering personal prefs on top of a company or community preset.
+#
+# extends = [
+#     "https://raw.githubusercontent.com/acme/macsetup/main/company.toml",
+# ]
 
 # ---------- Machine identity ------------------------------------------------
 [machine]

@@ -1,4 +1,4 @@
-package config
+package main
 
 import (
 	"fmt"
@@ -7,16 +7,16 @@ import (
 	"github.com/BurntSushi/toml"
 )
 
-// Config is the top-level configuration structure matching macsetup.toml.
 type Config struct {
-	Machine  MachineConfig  `toml:"machine"`
-	Packages PackagesConfig `toml:"packages"`
-	MAS      MASConfig      `toml:"mas"`
-	Dotfiles DotfilesConfig `toml:"dotfiles"`
-	Shell    ShellConfig    `toml:"shell"`
+	Extends  []string                         `toml:"extends"`
+	Machine  MachineConfig                    `toml:"machine"`
+	Packages PackagesConfig                   `toml:"packages"`
+	MAS      MASConfig                        `toml:"mas"`
+	Dotfiles DotfilesConfig                   `toml:"dotfiles"`
+	Shell    ShellConfig                      `toml:"shell"`
 	Defaults map[string]map[string]interface{} `toml:"defaults"`
-	System   SystemConfig   `toml:"system"`
-	Hooks    HooksConfig    `toml:"hooks"`
+	System   SystemConfig                     `toml:"system"`
+	Hooks    HooksConfig                      `toml:"hooks"`
 }
 
 type MachineConfig struct {
@@ -60,7 +60,6 @@ type HooksConfig struct {
 	PostInstall []string `toml:"post_install"`
 }
 
-// Load reads and parses the TOML config file.
 func Load(path string) (*Config, error) {
 	data, err := os.ReadFile(path)
 	if err != nil {
@@ -74,7 +73,6 @@ func Load(path string) (*Config, error) {
 	return &cfg, nil
 }
 
-// BoolVal safely dereferences a *bool, returning false if nil.
 func BoolVal(b *bool) bool {
 	if b == nil {
 		return false

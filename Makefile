@@ -1,4 +1,4 @@
-.PHONY: build install clean test fmt lint
+.PHONY: build install build-all clean test fmt lint
 
 BINARY    := macsetup
 CMD       := ./cmd/macsetup
@@ -22,6 +22,12 @@ install: build
 	sudo chmod +x $(INSTALL)/$(BINARY)
 	@echo "Installed to $(INSTALL)/$(BINARY)"
 
+## build-all: Build named release artifacts for darwin/arm64 and darwin/amd64
+build-all:
+	GOOS=darwin GOARCH=arm64 go build -ldflags "$(LDFLAGS)" -o $(BINARY)-darwin-arm64 $(CMD)
+	GOOS=darwin GOARCH=amd64 go build -ldflags "$(LDFLAGS)" -o $(BINARY)-darwin-amd64 $(CMD)
+	@echo "Built: $(BINARY)-darwin-arm64  $(BINARY)-darwin-amd64"
+
 ## universal: Build a universal (fat) binary for macOS (amd64 + arm64)
 universal:
 	GOOS=darwin GOARCH=amd64 go build -ldflags "$(LDFLAGS)" -o $(BINARY)-amd64 $(CMD)
@@ -32,7 +38,7 @@ universal:
 
 ## clean: Remove build artifacts
 clean:
-	rm -f $(BINARY) $(BINARY)-amd64 $(BINARY)-arm64
+	rm -f $(BINARY) $(BINARY)-amd64 $(BINARY)-arm64 $(BINARY)-darwin-arm64 $(BINARY)-darwin-amd64
 
 ## fmt: Format all Go source files
 fmt:

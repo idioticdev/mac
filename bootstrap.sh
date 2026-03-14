@@ -3,15 +3,19 @@
 # bootstrap.sh — One-liner bootstrap for macsetup
 # ============================================================================
 # Usage (fresh Mac):
-#   bash <(curl -sL https://raw.githubusercontent.com/youruser/macsetup/main/bootstrap.sh)
+#   curl -fsSL https://raw.githubusercontent.com/youruser/macsetup/main/bootstrap.sh | bash
+#
+# Headless (skip config prompt):
+#   CONFIG_URL=https://raw.githubusercontent.com/you/dotfiles/main/macsetup.toml \
+#     curl -fsSL https://raw.githubusercontent.com/youruser/macsetup/main/bootstrap.sh | bash
 #
 # What this does:
-#   1. Installs Xcode Command Line Tools (for git, clang)
+#   1. Installs Xcode Command Line Tools (if missing)
 #   2. Installs Homebrew (if missing)
-#   3. Installs Go via Homebrew
-#   4. Clones your macsetup repo
-#   5. Builds the macsetup binary
-#   6. Runs macsetup apply
+#   3. Detects architecture (arm64 / amd64)
+#   4. Downloads the latest pre-built macsetup binary from GitHub Releases
+#   5. Installs it to /usr/local/bin
+#   6. Prompts for your macsetup.toml URL and runs apply
 # ============================================================================
 set -euo pipefail
 
@@ -20,15 +24,16 @@ BLUE='\033[0;34m'; CYAN='\033[0;36m'; BOLD='\033[1m'; NC='\033[0m'
 
 info()  { printf "  ${CYAN}→${NC} %s\n" "$1"; }
 ok()    { printf "  ${GREEN}✓${NC} %s\n" "$1"; }
+warn()  { printf "  ${YELLOW}!${NC} %s\n" "$1"; }
 fail()  { printf "  ${RED}✗${NC} %s\n" "$1"; exit 1; }
 
 # -------------------------------------------------------------------
-# CONFIGURATION — edit these to match your repo
+# CONFIGURATION
 # -------------------------------------------------------------------
-REPO_URL="https://github.com/youruser/macsetup.git"   # HTTPS for fresh Macs without SSH keys
-REPO_SSH="git@github.com:youruser/macsetup.git"        # Used after SSH keys are set up
-CLONE_DIR="$HOME/.macsetup"
+GITHUB_REPO="youruser/macsetup"
 INSTALL_DIR="/usr/local/bin"
+CONFIG_DIR="${XDG_CONFIG_HOME:-$HOME/.config}/macsetup"
+CONFIG_FILE="$CONFIG_DIR/macsetup.toml"
 # -------------------------------------------------------------------
 
 printf "\n${BOLD}${BLUE}"
@@ -44,12 +49,11 @@ else
     info "Installing Xcode Command Line Tools …"
     xcode-select --install 2>/dev/null || true
 
-    # Wait for installation to complete
     echo ""
     echo "    A dialog should have appeared asking to install the tools."
     echo "    Please complete the installation, then press ENTER to continue."
     read -r
-    
+
     if ! xcode-select -p &>/dev/null; then
         fail "Xcode Command Line Tools installation failed. Please install manually and re-run."
     fi
@@ -70,61 +74,89 @@ else
     ok "Homebrew installed"
 fi
 
-# ---- Step 3: Go -----------------------------------------------------------
-if command -v go &>/dev/null; then
-    ok "Go already installed ($(go version | awk '{print $3}'))"
+# ---- Step 3: Detect architecture ------------------------------------------
+MACHINE="$(uname -m)"
+if [[ "$MACHINE" == "arm64" ]]; then
+    ARCH="arm64"
+elif [[ "$MACHINE" == "x86_64" ]]; then
+    ARCH="amd64"
 else
-    info "Installing Go via Homebrew …"
-    brew install go
-    ok "Go installed"
+    fail "Unsupported architecture: $MACHINE"
 fi
+ok "Architecture: $ARCH"
 
-# ---- Step 4: Clone / update repo ------------------------------------------
-if [[ -d "$CLONE_DIR" ]]; then
-    ok "Repo already cloned at $CLONE_DIR"
-    info "Pulling latest …"
-    git -C "$CLONE_DIR" pull --ff-only 2>/dev/null || true
+# ---- Step 4: Fetch latest release tag -------------------------------------
+info "Fetching latest release …"
+API_URL="https://api.github.com/repos/${GITHUB_REPO}/releases/latest"
+TAG="$(curl -fsSL "$API_URL" | grep '"tag_name"' | sed 's/.*"tag_name": *"\([^"]*\)".*/\1/')"
+if [[ -z "$TAG" ]]; then
+    fail "Could not determine latest release. Check https://github.com/${GITHUB_REPO}/releases"
+fi
+ok "Latest release: $TAG"
+
+# ---- Step 5: Download pre-built binary ------------------------------------
+BINARY_NAME="macsetup-darwin-${ARCH}"
+DOWNLOAD_URL="https://github.com/${GITHUB_REPO}/releases/download/${TAG}/${BINARY_NAME}"
+TMP_BIN="$(mktemp)"
+
+info "Downloading ${BINARY_NAME} …"
+if ! curl -fsSL "$DOWNLOAD_URL" -o "$TMP_BIN"; then
+    rm -f "$TMP_BIN"
+    fail "Download failed: $DOWNLOAD_URL"
+fi
+ok "Downloaded $BINARY_NAME"
+
+# ---- Step 6: Install binary -----------------------------------------------
+info "Installing to ${INSTALL_DIR}/macsetup …"
+chmod +x "$TMP_BIN"
+sudo mkdir -p "$INSTALL_DIR"
+sudo mv "$TMP_BIN" "${INSTALL_DIR}/macsetup"
+ok "Installed: ${INSTALL_DIR}/macsetup  (${TAG})"
+
+# ---- Step 7: Fetch config -------------------------------------------------
+printf "\n${BOLD}Almost there!${NC}\n\n"
+
+if [[ -n "${CONFIG_URL:-}" ]]; then
+    # Headless mode: CONFIG_URL provided via env
+    info "Fetching config from $CONFIG_URL …"
+    mkdir -p "$CONFIG_DIR"
+    if ! curl -fsSL "$CONFIG_URL" -o "$CONFIG_FILE"; then
+        fail "Could not download config from: $CONFIG_URL"
+    fi
+    ok "Config saved to $CONFIG_FILE"
+elif [[ -f "$CONFIG_FILE" ]]; then
+    ok "Existing config found: $CONFIG_FILE"
 else
-    info "Cloning macsetup repo …"
-    # Try HTTPS first (no SSH keys on fresh Mac), fall back to SSH
-    if git clone "$REPO_URL" "$CLONE_DIR" 2>/dev/null; then
-        ok "Cloned via HTTPS"
-    elif git clone "$REPO_SSH" "$CLONE_DIR" 2>/dev/null; then
-        ok "Cloned via SSH"
+    echo "  Enter the raw GitHub URL to your macsetup.toml, or press ENTER to skip."
+    echo "  Example: https://raw.githubusercontent.com/you/dotfiles/main/macsetup.toml"
+    echo ""
+    printf "  Config URL: "
+    read -r CONFIG_URL
+
+    if [[ -n "$CONFIG_URL" ]]; then
+        info "Fetching config …"
+        mkdir -p "$CONFIG_DIR"
+        if ! curl -fsSL "$CONFIG_URL" -o "$CONFIG_FILE"; then
+            fail "Could not download config from: $CONFIG_URL"
+        fi
+        ok "Config saved to $CONFIG_FILE"
     else
-        fail "Could not clone repo. Check REPO_URL in this script."
+        warn "Skipped. Run later with:  macsetup apply -c /path/to/macsetup.toml"
     fi
 fi
 
-# ---- Step 5: Build --------------------------------------------------------
-info "Building macsetup …"
-cd "$CLONE_DIR"
-go build -o macsetup ./cmd/macsetup
-ok "Built: $CLONE_DIR/macsetup"
-
-# ---- Step 6: Install binary -----------------------------------------------
-info "Installing to $INSTALL_DIR/macsetup …"
-sudo mkdir -p "$INSTALL_DIR"
-sudo cp macsetup "$INSTALL_DIR/macsetup"
-sudo chmod +x "$INSTALL_DIR/macsetup"
-ok "Installed: $INSTALL_DIR/macsetup"
-
-# ---- Step 7: Run ----------------------------------------------------------
-printf "\n${BOLD}Build complete!${NC}\n\n"
-echo "  To apply your config:"
-echo ""
-echo "    cd $CLONE_DIR"
-echo "    macsetup apply"
-echo ""
-echo "  Or with a custom config:"
-echo ""
-echo "    macsetup apply -c /path/to/macsetup.toml"
-echo ""
-
-# Ask if they want to run now
-read -rp "  Run macsetup apply now? [Y/n] " answer
-answer=${answer:-Y}
-if [[ "$answer" =~ ^[Yy]$ ]]; then
+# ---- Step 8: Apply (if config available) ----------------------------------
+if [[ -f "$CONFIG_FILE" ]]; then
     echo ""
-    macsetup apply -c "$CLONE_DIR/macsetup.toml"
+    read -rp "  Run macsetup apply now? [Y/n] " answer
+    answer=${answer:-Y}
+    if [[ "$answer" =~ ^[Yy]$ ]]; then
+        echo ""
+        macsetup apply -c "$CONFIG_FILE"
+    fi
 fi
+
+printf "\n${BOLD}${GREEN}Done!${NC}\n\n"
+echo "  To apply your config at any time:"
+echo "    macsetup apply -c $CONFIG_FILE"
+echo ""
