@@ -1,0 +1,7 @@
+{
+  "database": "dolt",
+  "backend": "dolt",
+  "dolt_mode": "server",
+  "dolt_database": "mac_setup",
+  "project_id": "2683f434-7ef9-451a-8fd3-e1e28047a63d"
+}
