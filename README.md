@@ -1,14 +1,14 @@
-# macsetup
+# mac
 
 **One file. One command. Your entire Mac, configured.**
 
-`macsetup` is a declarative macOS configuration tool written in Go. It handles Homebrew packages, Mac App Store apps, dotfiles (via GNU Stow), macOS system defaults, PAM Touch ID, and post-install hooks — all from a single TOML config.
+`mac` is a declarative macOS configuration tool written in Go. It handles Homebrew packages, Mac App Store apps, dotfiles (via GNU Stow), macOS system defaults, PAM Touch ID, and post-install hooks — all from a single TOML config.
 
 ## Why?
 
 | Tool | Packages | Dotfiles | System Defaults | PAM / Touch ID | One Config | Simple Install |
 |------|----------|----------|-----------------|----------------|------------|----------------|
-| **macsetup** | ✅ | ✅ (Stow) | ✅ | ✅ | ✅ TOML | ✅ one binary |
+| **mac** | ✅ | ✅ (Stow) | ✅ | ✅ | ✅ TOML | ✅ one binary |
 | nix-darwin | ✅ | ✅ | ✅ | ✅ | Nix (steep curve) | ❌ |
 | Devbox | ✅ | ❌ | ❌ | ❌ | JSON | ✅ |
 | Homebrew Bundle | ✅ | ❌ | ❌ | ❌ | Brewfile | ✅ |
@@ -19,39 +19,39 @@
 One command to go from a factory-fresh Mac to your full setup:
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/youruser/macsetup/main/bootstrap.sh | bash
+curl -fsSL https://raw.githubusercontent.com/idioticdev/mac/main/bootstrap.sh | bash
 ```
 
-The bootstrap handles everything: Xcode CLI Tools → Homebrew → download pre-built binary → install to `/usr/local/bin` → prompt for your config URL → apply. No Go installation required.
+The bootstrap handles everything: Xcode CLI Tools → Homebrew → download pre-built binary → install to `/usr/local/bin` → prompt for your config URL (or generate a starter config) → apply. No Go installation required.
 
 For a fully headless install (CI / zero interaction):
 
 ```bash
-CONFIG_URL=https://raw.githubusercontent.com/you/dotfiles/main/macsetup.toml \
-  curl -fsSL https://raw.githubusercontent.com/youruser/macsetup/main/bootstrap.sh | bash
+CONFIG_URL=https://raw.githubusercontent.com/you/dotfiles/main/mac.toml \
+  curl -fsSL https://raw.githubusercontent.com/idioticdev/mac/main/bootstrap.sh | bash
 ```
 
 ## Quick Start — Existing Setup
 
 ```bash
 # Clone
-git clone https://github.com/youruser/macsetup.git ~/.macsetup
-cd ~/.macsetup
+git clone https://github.com/idioticdev/mac.git ~/.mac
+cd ~/.mac
 
 # Edit config
-$EDITOR macsetup.toml
+$EDITOR mac.toml
 
 # Build and install
 make install
 
 # Run
-macsetup apply
+mac apply
 ```
 
 ## Usage
 
 ```
-macsetup [command] [options]
+mac [command] [options]
 
 Commands:
   apply       Apply the configuration (default)
@@ -60,17 +60,17 @@ Commands:
   version     Print version
 
 Options:
-  -c, --config <path>   Config file (default: ~/.config/macsetup/macsetup.toml)
+  -c, --config <path>   Config file (default: ~/.config/mac/mac.toml)
   -h, --help            Show this help
 
 Environment:
-  MACSETUP_CONFIG   Override config path (same as -c)
+  MAC_CONFIG   Override config path (same as -c)
 ```
 
 ### Preview changes before applying
 
 ```bash
-macsetup diff
+mac diff
 ```
 
 Shows which packages would be installed, which defaults would change, and what system tweaks would be applied — without touching anything.
@@ -78,7 +78,7 @@ Shows which packages would be installed, which defaults would change, and what s
 ### Validate your config
 
 ```bash
-macsetup validate
+mac validate
 ```
 
 ## Building
@@ -100,6 +100,13 @@ make lint              # Run go vet
 [machine]
 computer_name  = "my-air"
 local_hostname = "my-air"
+```
+
+To find your current values:
+
+```bash
+scutil --get ComputerName   # → "My MacBook Air"  (shown in Sharing preferences)
+scutil --get LocalHostName  # → "My-MacBook-Air"  (Bonjour / .local hostname)
 ```
 
 ### `[packages]`
@@ -169,7 +176,7 @@ Layer your config on top of a base template (e.g. a company preset):
 
 ```toml
 extends = [
-    "https://raw.githubusercontent.com/acme/macsetup/main/company.toml",
+    "https://raw.githubusercontent.com/acme/mac/main/company.toml",
 ]
 ```
 
@@ -207,14 +214,14 @@ diff /tmp/before.plist /tmp/after.plist
 ## Project Structure
 
 ```
-macsetup/
+mac/
 ├── bootstrap.sh                 # One-liner bootstrap for fresh Macs
-├── macsetup.toml                # Example config (copy and edit)
+├── mac.toml                     # Example config (copy and edit)
 ├── Makefile
 ├── go.mod / go.sum
 ├── .github/workflows/
 │   └── release.yml              # Publishes pre-built binaries on git tags
-└── cmd/macsetup/
+└── cmd/mac/
     ├── main.go                  # CLI entry point: apply / diff / validate
     ├── config.go                # Config struct and TOML loader
     ├── extends.go               # Template inheritance + merge logic
