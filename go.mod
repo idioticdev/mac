@@ -1,4 +1,4 @@
-module github.com/youruser/macsetup
+module github.com/youruser/mac
 
 go 1.22
 

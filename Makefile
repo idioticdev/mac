@@ -1,7 +1,7 @@
 .PHONY: build install build-all clean test fmt lint
 
-BINARY    := macsetup
-CMD       := ./cmd/macsetup
+BINARY    := mac
+CMD       := ./cmd/mac
 INSTALL   := /usr/local/bin
 
 # Detect arch for cross-compilation

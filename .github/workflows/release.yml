@@ -16,9 +16,9 @@ jobs:
       matrix:
         include:
           - goarch: arm64
-            artifact: macsetup-darwin-arm64
+            artifact: mac-darwin-arm64
           - goarch: amd64
-            artifact: macsetup-darwin-amd64
+            artifact: mac-darwin-amd64
 
     steps:
       - name: Checkout
@@ -38,7 +38,7 @@ jobs:
           go build \
             -ldflags "-s -w -X main.version=${GITHUB_REF_NAME}" \
             -o "${{ matrix.artifact }}" \
-            ./cmd/macsetup
+            ./cmd/mac
 
       - name: Upload artifact
         uses: actions/upload-artifact@v4
@@ -62,6 +62,6 @@ jobs:
         uses: softprops/action-gh-release@v2
         with:
           files: |
-            macsetup-darwin-arm64
-            macsetup-darwin-amd64
+            mac-darwin-arm64
+            mac-darwin-amd64
           generate_release_notes: true
