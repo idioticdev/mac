@@ -99,7 +99,11 @@ ok "Architecture: $ARCH"
 # ---- Step 4: Fetch latest release tag -------------------------------------
 info "Fetching latest release …"
 API_URL="https://api.github.com/repos/${GITHUB_REPO}/releases/latest"
-TAG="$(curl -fsSL "$API_URL" | grep '"tag_name"' | sed 's/.*"tag_name": *"\([^"]*\)".*/\1/')"
+API_RESPONSE="$(curl -sSL "$API_URL")"
+if echo "$API_RESPONSE" | grep -q '"message": *"Not Found"'; then
+    fail "No releases found for ${GITHUB_REPO}. A maintainer must publish a release first: https://github.com/${GITHUB_REPO}/releases"
+fi
+TAG="$(echo "$API_RESPONSE" | grep '"tag_name"' | sed 's/.*"tag_name": *"\([^"]*\)".*/\1/')"
 if [[ -z "$TAG" ]]; then
     fail "Could not determine latest release. Check https://github.com/${GITHUB_REPO}/releases"
 fi
