@@ -27,6 +27,20 @@ ok()    { printf "  ${GREEN}✓${NC} %s\n" "$1"; }
 warn()  { printf "  ${YELLOW}!${NC} %s\n" "$1"; }
 fail()  { printf "  ${RED}✗${NC} %s\n" "$1"; exit 1; }
 
+# ---- Sudo: authenticate once, keep alive, revoke on exit ------------------
+_SUDO_KEEPALIVE_PID=""
+_sudo_cleanup() {
+    [[ -n "$_SUDO_KEEPALIVE_PID" ]] && kill "$_SUDO_KEEPALIVE_PID" 2>/dev/null || true
+    sudo -k  # revoke cached credentials
+}
+trap _sudo_cleanup EXIT
+
+info "This script needs sudo access for Homebrew and binary install."
+sudo -v < /dev/tty
+# Refresh the credential every 50s so it doesn't expire mid-run
+(while true; do sudo -n true 2>/dev/null; sleep 50; done) &
+_SUDO_KEEPALIVE_PID=$!
+
 # -------------------------------------------------------------------
 # CONFIGURATION
 # -------------------------------------------------------------------
@@ -73,9 +87,6 @@ if command -v brew &>/dev/null; then
     ok "Homebrew already installed"
 else
     info "Installing Homebrew …"
-    # When piped via curl | bash, stdin is not a TTY so Homebrew cannot prompt
-    # for sudo. Pre-cache credentials from /dev/tty, then run non-interactively.
-    sudo -v < /dev/tty
     NONINTERACTIVE=1 /bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"
 
     # Add to PATH for current session (Apple Silicon)
