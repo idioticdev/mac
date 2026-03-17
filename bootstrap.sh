@@ -73,7 +73,10 @@ if command -v brew &>/dev/null; then
     ok "Homebrew already installed"
 else
     info "Installing Homebrew …"
-    /bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"
+    # When piped via curl | bash, stdin is not a TTY so Homebrew cannot prompt
+    # for sudo. Pre-cache credentials from /dev/tty, then run non-interactively.
+    sudo -v < /dev/tty
+    NONINTERACTIVE=1 /bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"
 
     # Add to PATH for current session (Apple Silicon)
     if [[ -f /opt/homebrew/bin/brew ]]; then
