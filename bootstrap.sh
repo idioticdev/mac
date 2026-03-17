@@ -47,25 +47,24 @@ if xcode-select -p &>/dev/null; then
     ok "Xcode Command Line Tools already installed"
 else
     info "Installing Xcode Command Line Tools …"
-    # Headless install via softwareupdate — avoids the GUI dialog that
-    # xcode-select --install triggers. The sentinel file signals softwareupdate
-    # to include CLT in its catalog. Tested on fresh macOS 14 (Sonoma) and 15 (Sequoia).
-    CLT_SENTINEL="/tmp/.com.apple.dt.CommandLineTools.installondemand.in-progress"
-    touch "$CLT_SENTINEL"
-    CLT_PACKAGE=$(softwareupdate -l 2>&1 |
-        grep -B 1 -E "Command Line Tools" |
-        awk -F"*" '/^\*/ {print $2}' |
-        sed -e 's/^ *Label: //' -e 's/^ *//' |
-        sort -V |
-        tail -1)
-    rm -f "$CLT_SENTINEL"
-    # Guard: Apple occasionally renames CLT packages across macOS versions
-    [[ -z "$CLT_PACKAGE" ]] && fail "Xcode CLT not found in softwareupdate catalog — check: softwareupdate -l"
-    softwareupdate -i "$CLT_PACKAGE" --verbose
-
-    if ! xcode-select -p &>/dev/null; then
-        fail "Xcode Command Line Tools installation failed. Please install manually and re-run."
-    fi
+    # Triggers the native macOS install dialog, then polls until complete.
+    # xcode-select --install exits non-zero (it launched the GUI, not the tools),
+    # so we suppress the error and poll xcode-select -p every 5s.
+    xcode-select --install 2>/dev/null || true
+    echo ""
+    warn "A dialog appeared — click Install to continue."
+    echo "    Waiting for Xcode Command Line Tools to finish installing…"
+    echo ""
+    WAIT=0
+    while ! xcode-select -p &>/dev/null; do
+        sleep 5
+        WAIT=$((WAIT + 5))
+        printf "    [%ds elapsed]\r" "$WAIT"
+        if [[ $WAIT -ge 1800 ]]; then
+            fail "Xcode Command Line Tools installation timed out after 30 min. Install manually then re-run."
+        fi
+    done
+    echo ""
     ok "Xcode Command Line Tools installed"
 fi
 
