@@ -41,8 +41,8 @@ cd ~/.mac
 # Edit config
 $EDITOR mac.toml
 
-# Build and install
-make install
+# Build and install (requires just: brew install just)
+just install
 
 # Run
 mac apply
@@ -84,13 +84,16 @@ mac validate
 ## Building
 
 ```bash
-make build             # Standard build
-make install           # Build + install to /usr/local/bin
-make build-all         # Cross-compile named release artifacts (arm64 + amd64)
-make universal         # Universal binary via lipo (Intel + Apple Silicon)
-make fmt               # Format source
-make lint              # Run go vet
+just build             # Standard build
+just install           # Build + install to /usr/local/bin
+just build-all         # Cross-compile named release artifacts (arm64 + amd64)
+just universal         # Universal binary via lipo (Intel + Apple Silicon)
+just fmt               # Format source
+just lint              # Run go vet
+just check             # fmt + lint + test
 ```
+
+Install just: `brew install just`
 
 ## Config Reference
 
@@ -217,7 +220,7 @@ diff /tmp/before.plist /tmp/after.plist
 mac/
 ├── bootstrap.sh                 # One-liner bootstrap for fresh Macs
 ├── mac.toml                     # Example config (copy and edit)
-├── Makefile
+├── justfile
 ├── go.mod / go.sum
 ├── .github/workflows/
 │   └── release.yml              # Publishes pre-built binaries on git tags

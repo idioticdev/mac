@@ -11,17 +11,19 @@ See `AGENTS.md` for agent workflow rules (beads issue tracking, session completi
 ## Build & Development
 
 ```bash
-make build        # Build for current platform → ./mac
-make install      # Build + install to /usr/local/bin
-make build-all    # Cross-compile arm64 + amd64
-make universal    # Universal binary via lipo
-make fmt          # go fmt
-make lint         # go vet
-make test         # Run tests
-make clean        # Remove build artifacts
+just              # List all available recipes
+just build        # Build for current platform → ./mac
+just install      # Build + install to /usr/local/bin
+just build-all    # Cross-compile named release artifacts (arm64 + amd64)
+just universal    # Universal binary via lipo
+just fmt          # go fmt
+just lint         # go vet
+just test         # Run tests
+just check        # fmt + lint + test (pre-commit gate)
+just clean        # Remove build artifacts
 ```
 
-Uses Go 1.22+. `devbox.json` provides the dev shell (run `devbox shell`).
+Uses Go 1.22+. `devbox.json` provides the dev shell (run `devbox shell`). Install just: `brew install just`
 
 ## Architecture
 
