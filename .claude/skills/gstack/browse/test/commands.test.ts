@@ -144,6 +144,81 @@ describe('Inspection', () => {
     expect(obj.b).toBe(2);
   });
 
+  test('js supports await expressions', async () => {
+    const result = await handleReadCommand('js', ['await Promise.resolve(42)'], bm);
+    expect(result).toBe('42');
+  });
+
+  test('js does not false-positive on await substring', async () => {
+    const result = await handleReadCommand('js', ['(() => { const awaitable = 5; return awaitable })()'], bm);
+    expect(result).toBe('5');
+  });
+
+  test('eval supports await in single-line file', async () => {
+    const tmp = '/tmp/eval-await-test.js';
+    fs.writeFileSync(tmp, 'await Promise.resolve("hello from eval")');
+    try {
+      const result = await handleReadCommand('eval', [tmp], bm);
+      expect(result).toBe('hello from eval');
+    } finally {
+      fs.unlinkSync(tmp);
+    }
+  });
+
+  test('eval does not wrap when await is only in a comment', async () => {
+    const tmp = '/tmp/eval-comment-test.js';
+    fs.writeFileSync(tmp, '// no need to await this\ndocument.title');
+    try {
+      const result = await handleReadCommand('eval', [tmp], bm);
+      expect(result).toBe('Test Page - Basic');
+    } finally {
+      fs.unlinkSync(tmp);
+    }
+  });
+
+  test('eval multi-line with await and explicit return', async () => {
+    const tmp = '/tmp/eval-multiline-await.js';
+    fs.writeFileSync(tmp, 'const data = await Promise.resolve("multi");\nreturn data;');
+    try {
+      const result = await handleReadCommand('eval', [tmp], bm);
+      expect(result).toBe('multi');
+    } finally {
+      fs.unlinkSync(tmp);
+    }
+  });
+
+  test('eval multi-line with await but no return gives empty string', async () => {
+    const tmp = '/tmp/eval-multiline-no-return.js';
+    fs.writeFileSync(tmp, 'const data = await Promise.resolve("lost");\ndata;');
+    try {
+      const result = await handleReadCommand('eval', [tmp], bm);
+      expect(result).toBe('');
+    } finally {
+      fs.unlinkSync(tmp);
+    }
+  });
+
+  test('js handles multi-line with await', async () => {
+    const code = 'const x = await Promise.resolve(42);\nreturn x;';
+    const result = await handleReadCommand('js', [code], bm);
+    expect(result).toBe('42');
+  });
+
+  test('js handles await with semicolons', async () => {
+    const result = await handleReadCommand('js', ['const x = await Promise.resolve(5); return x + 1;'], bm);
+    expect(result).toBe('6');
+  });
+
+  test('js handles await with statement keywords', async () => {
+    const result = await handleReadCommand('js', ['const res = await Promise.resolve("ok"); return res;'], bm);
+    expect(result).toBe('ok');
+  });
+
+  test('js still works for simple expressions', async () => {
+    const result = await handleReadCommand('js', ['1 + 2'], bm);
+    expect(result).toBe('3');
+  });
+
   test('css returns computed property', async () => {
     const result = await handleReadCommand('css', ['h1', 'color'], bm);
     // Navy color
@@ -192,6 +267,36 @@ describe('Interaction', () => {
     const val = await handleReadCommand('js', ['document.querySelector("#role").value'], bm);
     expect(val).toBe('admin');
   });
+
+  test('click on option ref auto-routes to selectOption', async () => {
+    await handleWriteCommand('goto', [baseUrl + '/forms.html'], bm);
+    // Reset select to default
+    await handleReadCommand('js', ['document.querySelector("#role").value = ""'], bm);
+    const snap = await handleMetaCommand('snapshot', [], bm, async () => {});
+    // Find an option ref (e.g., "Admin" option)
+    const optionLine = snap.split('\n').find((l: string) => l.includes('[option]') && l.includes('"Admin"'));
+    expect(optionLine).toBeDefined();
+    const refMatch = optionLine!.match(/@(e\d+)/);
+    expect(refMatch).toBeDefined();
+    const ref = `@${refMatch![1]}`;
+    const result = await handleWriteCommand('click', [ref], bm);
+    expect(result).toContain('auto-routed');
+    expect(result).toContain('Selected');
+    // Verify the select value actually changed
+    const val = await handleReadCommand('js', ['document.querySelector("#role").value'], bm);
+    expect(val).toBe('admin');
+  });
+
+  test('click CSS selector on option gives helpful error', async () => {
+    await handleWriteCommand('goto', [baseUrl + '/forms.html'], bm);
+    try {
+      await handleWriteCommand('click', ['option[value="admin"]'], bm);
+      expect(true).toBe(false); // Should not reach here
+    } catch (err: any) {
+      expect(err.message).toContain('select');
+      expect(err.message).toContain('option');
+    }
+  }, 15000);
 
   test('hover works', async () => {
     const result = await handleWriteCommand('hover', ['h1'], bm);
@@ -281,10 +386,42 @@ describe('Cookies and storage', () => {
   });
 
   test('storage set and get works', async () => {
-    await handleReadCommand('storage', ['set', 'testKey', 'testValue'], bm);
+    await handleReadCommand('storage', ['set', 'testData', 'testValue'], bm);
     const result = await handleReadCommand('storage', [], bm);
     const storage = JSON.parse(result);
-    expect(storage.localStorage.testKey).toBe('testValue');
+    expect(storage.localStorage.testData).toBe('testValue');
+  });
+
+  test('storage read redacts sensitive keys', async () => {
+    await handleWriteCommand('goto', [baseUrl + '/basic.html'], bm);
+    await handleReadCommand('storage', ['set', 'auth_token', 'my-secret-token'], bm);
+    await handleReadCommand('storage', ['set', 'api_key', 'key-12345'], bm);
+    await handleReadCommand('storage', ['set', 'displayName', 'normalValue'], bm);
+    const result = await handleReadCommand('storage', [], bm);
+    const storage = JSON.parse(result);
+    expect(storage.localStorage.auth_token).toMatch(/REDACTED/);
+    expect(storage.localStorage.api_key).toMatch(/REDACTED/);
+    expect(storage.localStorage.displayName).toBe('normalValue');
+  });
+
+  test('storage read redacts sensitive values by prefix', async () => {
+    await handleWriteCommand('goto', [baseUrl + '/basic.html'], bm);
+    // JWT value under innocuous key name
+    await handleReadCommand('storage', ['set', 'userData', 'eyJhbGciOiJIUzI1NiJ9.payload.sig'], bm);
+    // GitHub PAT under innocuous key name
+    await handleReadCommand('storage', ['set', 'repoAccess', 'ghp_abc123def456'], bm);
+    const result = await handleReadCommand('storage', [], bm);
+    const storage = JSON.parse(result);
+    expect(storage.localStorage.userData).toMatch(/REDACTED/);
+    expect(storage.localStorage.repoAccess).toMatch(/REDACTED/);
+  });
+
+  test('storage redaction includes value length', async () => {
+    await handleWriteCommand('goto', [baseUrl + '/basic.html'], bm);
+    await handleReadCommand('storage', ['set', 'session_token', 'abc123'], bm);
+    const result = await handleReadCommand('storage', [], bm);
+    const storage = JSON.parse(result);
+    expect(storage.localStorage.session_token).toBe('[REDACTED — 6 chars]');
   });
 });
 

@@ -10,14 +10,39 @@ import { consoleBuffer, networkBuffer, dialogBuffer } from './buffers';
 import type { Page } from 'playwright';
 import * as fs from 'fs';
 import * as path from 'path';
+import { TEMP_DIR, isPathWithin } from './platform';
+
+/** Detect await keyword, ignoring comments. Accepted risk: await in string literals triggers wrapping (harmless). */
+function hasAwait(code: string): boolean {
+  const stripped = code.replace(/\/\/.*$/gm, '').replace(/\/\*[\s\S]*?\*\//g, '');
+  return /\bawait\b/.test(stripped);
+}
+
+/** Detect whether code needs a block wrapper {…} vs expression wrapper (…) inside an async IIFE. */
+function needsBlockWrapper(code: string): boolean {
+  const trimmed = code.trim();
+  if (trimmed.split('\n').length > 1) return true;
+  if (/\b(const|let|var|function|class|return|throw|if|for|while|switch|try)\b/.test(trimmed)) return true;
+  if (trimmed.includes(';')) return true;
+  return false;
+}
+
+/** Wrap code for page.evaluate(), using async IIFE with block or expression body as needed. */
+function wrapForEvaluate(code: string): string {
+  if (!hasAwait(code)) return code;
+  const trimmed = code.trim();
+  return needsBlockWrapper(trimmed)
+    ? `(async()=>{\n${code}\n})()`
+    : `(async()=>(${trimmed}))()`;
+}
 
 // Security: Path validation to prevent path traversal attacks
-const SAFE_DIRECTORIES = ['/tmp', process.cwd()];
+const SAFE_DIRECTORIES = [TEMP_DIR, process.cwd()];
 
-function validateReadPath(filePath: string): void {
+export function validateReadPath(filePath: string): void {
   if (path.isAbsolute(filePath)) {
     const resolved = path.resolve(filePath);
-    const isSafe = SAFE_DIRECTORIES.some(dir => resolved === dir || resolved.startsWith(dir + '/'));
+    const isSafe = SAFE_DIRECTORIES.some(dir => isPathWithin(resolved, dir));
     if (!isSafe) {
       throw new Error(`Absolute path must be within: ${SAFE_DIRECTORIES.join(', ')}`);
     }
@@ -61,7 +86,7 @@ export async function handleReadCommand(
     case 'html': {
       const selector = args[0];
       if (selector) {
-        const resolved = bm.resolveRef(selector);
+        const resolved = await bm.resolveRef(selector);
         if ('locator' in resolved) {
           return await resolved.locator.innerHTML({ timeout: 5000 });
         }
@@ -118,7 +143,8 @@ export async function handleReadCommand(
     case 'js': {
       const expr = args[0];
       if (!expr) throw new Error('Usage: browse js <expression>');
-      const result = await page.evaluate(expr);
+      const wrapped = wrapForEvaluate(expr);
+      const result = await page.evaluate(wrapped);
       return typeof result === 'object' ? JSON.stringify(result, null, 2) : String(result ?? '');
     }
 
@@ -128,14 +154,15 @@ export async function handleReadCommand(
       validateReadPath(filePath);
       if (!fs.existsSync(filePath)) throw new Error(`File not found: ${filePath}`);
       const code = fs.readFileSync(filePath, 'utf-8');
-      const result = await page.evaluate(code);
+      const wrapped = wrapForEvaluate(code);
+      const result = await page.evaluate(wrapped);
       return typeof result === 'object' ? JSON.stringify(result, null, 2) : String(result ?? '');
     }
 
     case 'css': {
       const [selector, property] = args;
       if (!selector || !property) throw new Error('Usage: browse css <selector> <property>');
-      const resolved = bm.resolveRef(selector);
+      const resolved = await bm.resolveRef(selector);
       if ('locator' in resolved) {
         const value = await resolved.locator.evaluate(
           (el, prop) => getComputedStyle(el).getPropertyValue(prop),
@@ -157,7 +184,7 @@ export async function handleReadCommand(
     case 'attrs': {
       const selector = args[0];
       if (!selector) throw new Error('Usage: browse attrs <selector>');
-      const resolved = bm.resolveRef(selector);
+      const resolved = await bm.resolveRef(selector);
       if ('locator' in resolved) {
         const attrs = await resolved.locator.evaluate((el) => {
           const result: Record<string, string> = {};
@@ -221,7 +248,7 @@ export async function handleReadCommand(
       const selector = args[1];
       if (!property || !selector) throw new Error('Usage: browse is <property> <selector>\nProperties: visible, hidden, enabled, disabled, checked, editable, focused');
 
-      const resolved = bm.resolveRef(selector);
+      const resolved = await bm.resolveRef(selector);
       let locator;
       if ('locator' in resolved) {
         locator = resolved.locator;
@@ -263,7 +290,21 @@ export async function handleReadCommand(
         localStorage: { ...localStorage },
         sessionStorage: { ...sessionStorage },
       }));
-      return JSON.stringify(storage, null, 2);
+      // Redact values that look like secrets (tokens, keys, passwords, JWTs)
+      const SENSITIVE_KEY = /(^|[_.-])(token|secret|key|password|credential|auth|jwt|session|csrf)($|[_.-])|api.?key/i;
+      const SENSITIVE_VALUE = /^(eyJ|sk-|sk_live_|sk_test_|pk_live_|pk_test_|rk_live_|sk-ant-|ghp_|gho_|github_pat_|xox[bpsa]-|AKIA[A-Z0-9]{16}|AIza|SG\.|Bearer\s|sbp_)/;
+      const redacted = JSON.parse(JSON.stringify(storage));
+      for (const storeType of ['localStorage', 'sessionStorage'] as const) {
+        const store = redacted[storeType];
+        if (!store) continue;
+        for (const [key, value] of Object.entries(store)) {
+          if (typeof value !== 'string') continue;
+          if (SENSITIVE_KEY.test(key) || SENSITIVE_VALUE.test(value)) {
+            store[key] = `[REDACTED — ${value.length} chars]`;
+          }
+        }
+      }
+      return JSON.stringify(redacted, null, 2);
     }
 
     case 'perf': {

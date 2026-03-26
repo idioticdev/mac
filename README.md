@@ -2,51 +2,167 @@
 
 **One file. One command. Your entire Mac, configured.**
 
-`mac` is a declarative macOS configuration tool written in Go. It handles Homebrew packages, Mac App Store apps, dotfiles (via GNU Stow), macOS system defaults, PAM Touch ID, and post-install hooks — all from a single TOML config.
+`mac` is a declarative macOS configuration tool written in Go. It manages Homebrew packages, Mac App Store apps, dotfiles (via GNU Stow), macOS system defaults, PAM Touch ID, post-install hooks, and machine identity — all from a single TOML config.
 
-## Why?
+## Choose your path
 
-| Tool | Packages | Dotfiles | System Defaults | PAM / Touch ID | One Config | Simple Install |
-|------|----------|----------|-----------------|----------------|------------|----------------|
-| **mac** | ✅ | ✅ (Stow) | ✅ | ✅ | ✅ TOML | ✅ one binary |
-| nix-darwin | ✅ | ✅ | ✅ | ✅ | Nix (steep curve) | ❌ |
-| Devbox | ✅ | ❌ | ❌ | ❌ | JSON | ✅ |
-| Homebrew Bundle | ✅ | ❌ | ❌ | ❌ | Brewfile | ✅ |
-| Ansible | ✅ | ✅ | ✅ | ✅ | YAML (heavy) | ❌ |
+```
+Are you on a fresh Mac?
+  └─ Yes ──► Path 1: Fresh Mac          (bootstrap one-liner, ~10 min)
+  └─ No  ──► Do you use Homebrew?
+               └─ Yes ──► Path 2: Existing Homebrew   (export + apply, ~5 min)
+               └─ No  ──► Do you use nix-darwin?
+                            └─ Yes ──► Path 3: nix-darwin   (coexist, ~5 min)
+                            └─ No  ──► Path 2: Existing Homebrew
+```
 
-## Quick Start — Fresh Mac
+---
 
-One command to go from a factory-fresh Mac to your full setup:
+## Path 1: Fresh Mac
+
+One command to go from factory-reset to your full setup:
 
 ```bash
 curl -fsSL https://raw.githubusercontent.com/idioticdev/mac/main/bootstrap.sh | bash
 ```
 
-The bootstrap handles everything: Xcode CLI Tools → Homebrew → download pre-built binary → install to `/usr/local/bin` → prompt for your config URL (or generate a starter config) → apply. No Go installation required.
+The bootstrap handles everything automatically:
 
-For a fully headless install (CI / zero interaction):
+1. Installs Xcode Command Line Tools
+2. Installs Homebrew
+3. Downloads the latest `mac` binary to `/usr/local/bin`
+4. Runs `mac init` — a guided wizard to create your config
+
+After the wizard, review changes before anything is applied:
+
+```bash
+mac diff       # preview all changes — safe, nothing is written
+mac apply      # apply when ready
+```
+
+**Headless / CI install** (skip all prompts):
 
 ```bash
 CONFIG_URL=https://raw.githubusercontent.com/you/dotfiles/main/mac.toml \
   curl -fsSL https://raw.githubusercontent.com/idioticdev/mac/main/bootstrap.sh | bash
 ```
 
-## Quick Start — Existing Setup
+---
+
+## Path 2: Existing Homebrew Machine
+
+Your machine already has Homebrew and some packages. Generate a starter config from your current state:
 
 ```bash
-# Clone
-git clone https://github.com/idioticdev/mac.git ~/.mac
-cd ~/.mac
+# Install mac
+curl -fsSL https://raw.githubusercontent.com/idioticdev/mac/main/bootstrap.sh | bash
 
-# Edit config
-$EDITOR mac.toml
+# Generate mac.toml from current Homebrew state
+mac export > ~/.config/mac/mac.toml
 
-# Build and install (requires just: brew install just)
-just install
+# Edit the generated file (dotfiles, defaults, system tweaks are commented stubs)
+$EDITOR ~/.config/mac/mac.toml
 
-# Run
+# Preview what would change — safe, nothing is written
+mac diff
+
+# Apply when satisfied
 mac apply
 ```
+
+`mac export` reads your current `brew list` and `brew tap` output and generates a complete mac.toml with commented-out stubs for sections you may want to add later.
+
+Since `mac apply` is idempotent, packages already installed are skipped — it only installs what's missing.
+
+---
+
+## Path 3: Existing nix-darwin Machine
+
+You can run `mac` alongside nix-darwin. The key is telling `mac` which sections nix-darwin owns so they don't fight for control.
+
+```bash
+# Install mac binary
+curl -fsSL https://raw.githubusercontent.com/idioticdev/mac/main/bootstrap.sh | bash
+
+# Generate a starter config from your current Homebrew state
+mac export > ~/.config/mac/mac.toml
+
+# Edit the file — add a [meta] skip block for nix-darwin-managed sections
+$EDITOR ~/.config/mac/mac.toml
+```
+
+Add this near the top of your `mac.toml`:
+
+```toml
+# nix-darwin owns these — skip them to avoid conflicts
+[meta]
+skip = ["machine", "shell", "system"]
+```
+
+**Conflict reference:**
+
+| Section | nix-darwin conflict | Recommendation |
+|---|---|---|
+| `[packages]` | None — Homebrew ≠ nix | Safe to use |
+| `[dotfiles]` | Low (unless using home-manager) | Safe to use |
+| `[defaults.*]` | High — both write defaults | Skip if nix-darwin sets the same keys |
+| `[machine]` | High — `networking.hostName` | Skip |
+| `[system]` | Medium — PAM, Library | Skip |
+| `[shell]` | Medium — `users.users.<name>.shell` | Skip |
+| `[hooks]` | None | Safe to use |
+
+**Gradual migration path:**
+
+```toml
+# Phase 1: mac handles Homebrew + dotfiles; nix-darwin keeps the rest
+[meta]
+skip = ["machine", "shell", "system", "defaults"]
+
+# Phase 2: Add defaults once you confirm no nix-darwin overlap
+# (remove "defaults" from skip list)
+
+# Phase 3: Full migration — remove [meta] skip after nix-darwin is gone
+```
+
+Preview before applying:
+
+```bash
+mac diff       # shows what would change, nothing is written
+mac apply      # apply when ready
+```
+
+---
+
+## Safe Testing Ground — Company Configs
+
+Creating or reviewing a company mac.toml? Test it on your machine without touching anything:
+
+```bash
+# Preview the company config against your current state
+mac diff -c https://raw.githubusercontent.com/acme/mac/main/company.toml
+
+# Or test a local file
+mac diff -c ~/acme-mac.toml
+```
+
+`mac diff` runs the entire apply pipeline as a dry run. Nothing is written. You see exactly which packages would install, which defaults would change, and which system tweaks would run — including sections that the old `mac diff` missed (machine name, dotfiles, shell, hooks).
+
+Test a layered personal + company config:
+
+```toml
+# personal.toml
+extends = ["https://raw.githubusercontent.com/acme/mac/main/company.toml"]
+
+[packages]
+casks = ["wezterm", "arc"]   # personal additions on top of company config
+```
+
+```bash
+mac diff -c ~/personal.toml    # preview the merged result
+mac apply -c ~/personal.toml   # apply when ready
+```
+
+---
 
 ## Usage
 
@@ -55,61 +171,57 @@ mac [command] [options]
 
 Commands:
   apply       Apply the configuration (default)
-  diff        Show what would change without applying
+  diff        Preview all changes — safe, nothing is written
   validate    Check the config file for errors
+  export      Generate a mac.toml from current Homebrew state (stdout)
+  init        Guided setup wizard — create your first mac.toml
+  uninstall   Remove everything mac applied
   version     Print version
 
 Options:
-  -c, --config <path>   Config file (default: ~/.config/mac/mac.toml)
-  -h, --help            Show this help
+  -c, --config <path>    Config file (default: ~/.config/mac/mac.toml)
+  -o, --output <path>    Output path for export / init
+  -h, --help             Show this help
 
-Environment:
-  MAC_CONFIG   Override config path (same as -c)
+Examples:
+  mac diff                        # preview changes
+  mac diff -c company.toml        # preview a company config on your machine
+  mac apply                       # apply config
+  mac apply -c ~/my-setup.toml    # apply a specific config
+  mac export                      # print mac.toml from current state
+  mac export -o ~/mac.toml        # save export to file (via redirect or -o)
+  mac init                        # guided setup wizard
+  mac validate                    # check config for errors
+  mac uninstall --dry-run         # preview what uninstall would do
 ```
 
-### Preview changes before applying
-
-```bash
-mac diff
-```
-
-Shows which packages would be installed, which defaults would change, and what system tweaks would be applied — without touching anything.
-
-### Validate your config
-
-```bash
-mac validate
-```
-
-## Building
-
-```bash
-just build             # Standard build
-just install           # Build + install to /usr/local/bin
-just build-all         # Cross-compile named release artifacts (arm64 + amd64)
-just universal         # Universal binary via lipo (Intel + Apple Silicon)
-just fmt               # Format source
-just lint              # Run go vet
-just check             # fmt + lint + test
-```
-
-Install just: `brew install just`
+---
 
 ## Config Reference
+
+### `[meta]`
+
+```toml
+[meta]
+# Skip these sections during apply and diff.
+# Useful for coexisting with nix-darwin or other config managers.
+# Valid values: machine, packages, mas, dotfiles, shell, defaults, system, hooks
+skip = ["machine", "shell", "system"]
+```
 
 ### `[machine]`
 
 ```toml
 [machine]
 computer_name  = "my-air"
-local_hostname = "my-air"
+local_hostname = "my-air"   # Bonjour / .local hostname
 ```
 
-To find your current values:
+Find your current values:
 
 ```bash
-scutil --get ComputerName   # → "My MacBook Air"  (shown in Sharing preferences)
-scutil --get LocalHostName  # → "My-MacBook-Air"  (Bonjour / .local hostname)
+scutil --get ComputerName   # shown in System Settings → Sharing
+scutil --get LocalHostName  # Bonjour / .local hostname
 ```
 
 ### `[packages]`
@@ -122,6 +234,8 @@ casks    = ["wezterm", "raycast", "1password"]
 ```
 
 ### `[mas]` — Mac App Store
+
+Requires the `mas` CLI (`brew install mas`).
 
 ```toml
 [mas]
@@ -164,18 +278,25 @@ autohide = true
 tilesize = 36
 ```
 
+Discover defaults keys with the diff trick:
+
+```bash
+defaults read > /tmp/before.plist
+# Change something in System Settings
+defaults read > /tmp/after.plist
+diff /tmp/before.plist /tmp/after.plist
+```
+
 ### `[system]`
 
 ```toml
 [system]
-pam_tid         = true
-reveal_library  = true
-screenshots_dir = "~/Screenshots"
+pam_tid         = true            # Enable Touch ID for sudo
+reveal_library  = true            # Unhide ~/Library
+screenshots_dir = "~/Screenshots" # Created if missing
 ```
 
 ### `extends` — Template inheritance
-
-Layer your config on top of a base template (e.g. a company preset):
 
 ```toml
 extends = [
@@ -183,14 +304,7 @@ extends = [
 ]
 ```
 
-Merge semantics:
-- **Packages / taps / MAS apps** — union (deduplicated, base first)
-- **Defaults** — deep merge, your config wins on conflict
-- **Hooks** — concatenated (base hooks run first)
-- **machine / shell / dotfiles** — your config wins entirely if non-empty
-- **system** — field-by-field, your non-nil values win
-
-Chains are supported (a base can also extend). Cycles are detected and reported as errors.
+Merge semantics: packages/taps/MAS apps union (deduplicated); defaults deep-merge (child wins on conflict); hooks concatenated (base first); machine/shell/dotfiles child wins if non-empty.
 
 ### `[hooks]`
 
@@ -201,53 +315,41 @@ post_install = [
 ]
 ```
 
-## Discovering macOS Defaults
+---
+
+## Why mac?
+
+| Tool | Packages | Dotfiles | Defaults | Touch ID | One Config | Simple Install |
+|------|----------|----------|----------|----------|------------|----------------|
+| **mac** | ✅ | ✅ Stow | ✅ | ✅ | ✅ TOML | ✅ one binary |
+| nix-darwin | ✅ | ✅ | ✅ | ✅ | Nix (steep) | ❌ |
+| Homebrew Bundle | ✅ | ❌ | ❌ | ❌ | Brewfile | ✅ |
+| Ansible | ✅ | ✅ | ✅ | ✅ | YAML (heavy) | ❌ |
+
+---
+
+## Building from Source
 
 ```bash
-defaults domains | tr ',' '\n' | sort        # List all domains
-defaults read com.apple.dock                  # Read a domain
-
-# Diff trick
-defaults read > /tmp/before.plist
-# (change something in System Settings)
-defaults read > /tmp/after.plist
-diff /tmp/before.plist /tmp/after.plist
+just build      # build → ./mac
+just install    # build + install to /usr/local/bin
+just test       # run tests
+just check      # fmt + lint + test
 ```
 
-## Project Structure
+Install just: `brew install just`. Requires Go 1.22+.
 
-```
-mac/
-├── bootstrap.sh                 # One-liner bootstrap for fresh Macs
-├── mac.toml                     # Example config (copy and edit)
-├── justfile
-├── go.mod / go.sum
-├── .github/workflows/
-│   └── release.yml              # Publishes pre-built binaries on git tags
-└── cmd/mac/
-    ├── main.go                  # CLI entry point: apply / diff / validate
-    ├── config.go                # Config struct and TOML loader
-    ├── extends.go               # Template inheritance + merge logic
-    ├── init.go                  # First-run config URL prompt
-    ├── packages.go              # Homebrew + MAS installation
-    ├── defaults.go              # macOS defaults write
-    ├── dotfiles.go              # Git clone + GNU Stow
-    ├── machine.go               # ComputerName / HostName
-    ├── system.go                # PAM, ~/Library, shell, services
-    ├── hooks.go                 # Post-install hooks
-    ├── exec.go                  # Shell execution helpers
-    └── ui.go                    # Colored terminal output
-```
+---
 
 ## Idempotency
 
-Every operation checks current state before acting. Safe to re-run after any config change.
+Every operation checks current state before acting. Safe to re-run after any config change. `mac diff` always shows the current delta.
 
 ## Requirements
 
 - macOS 13+ (Sonoma+ recommended for `sudo_local` PAM support)
-- Internet connection
-- Go 1.22+ (only needed if building from source; not required for the bootstrap install)
+- Internet connection for bootstrap and remote configs
+- Go 1.22+ only if building from source
 
 ## License
 

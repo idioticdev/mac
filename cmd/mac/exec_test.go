@@ -113,6 +113,67 @@ func TestDryRunRunner_WhichAndExpandHomePassThrough(t *testing.T) {
 	}
 }
 
+// TestHumanSummary verifies that key command/arg combinations produce
+// user-friendly descriptions rather than raw command strings.
+func TestHumanSummary(t *testing.T) {
+	cases := []struct {
+		name string
+		args []string
+		want string
+	}{
+		{"brew", []string{"install", "neovim"}, "would install formula: neovim"},
+		{"brew", []string{"install", "--cask", "arc"}, "would install cask: arc"},
+		{"brew", []string{"uninstall", "git"}, "would uninstall formula: git"},
+		{"brew", []string{"uninstall", "--cask", "arc"}, "would uninstall cask: arc"},
+		{"brew", []string{"tap", "homebrew/core"}, "would tap: homebrew/core"},
+		{"brew", []string{"untap", "homebrew/core"}, "would untap: homebrew/core"},
+		{"brew", []string{"update", "--quiet"}, "would update Homebrew"},
+		{"mas", []string{"install", "497799835"}, "would install MAS app: 497799835"},
+		{"mas", []string{"uninstall", "497799835"}, "would uninstall MAS app: 497799835"},
+		{"defaults", []string{"write", "com.apple.dock", "autohide", "-bool", "true"},
+			"would set com.apple.dock autohide → true"},
+		{"defaults", []string{"delete", "com.apple.dock", "autohide"},
+			"would delete default com.apple.dock autohide"},
+		{"git", []string{"clone", "https://github.com/user/dotfiles", "/tmp/dotfiles"},
+			"would clone dotfiles: https://github.com/user/dotfiles"},
+		{"stow", []string{"-d", "/tmp/dotfiles", "-t", "/home/user", "--restow", "zsh"},
+			"would stow: zsh"},
+		{"chsh", []string{"-s", "/bin/zsh"}, "would change default shell: /bin/zsh"},
+		{"killall", []string{"Dock"}, "would restart service: Dock"},
+	}
+
+	for _, tc := range cases {
+		got := humanSummary(tc.name, tc.args)
+		if got != tc.want {
+			t.Errorf("humanSummary(%q, %v)\n  got:  %q\n  want: %q",
+				tc.name, tc.args, got, tc.want)
+		}
+	}
+}
+
+// TestHumanSudoSummary verifies scutil --set produces a clean description.
+func TestHumanSudoSummary(t *testing.T) {
+	got := humanSudoSummary("scutil", []string{"--set", "ComputerName", "my-mac"})
+	want := "would set ComputerName: my-mac"
+	if got != want {
+		t.Errorf("humanSudoSummary got %q, want %q", got, want)
+	}
+}
+
+// TestDryRunRunner_SudoVSkipped verifies that sudo -v is silently no-op'd
+// (no log noise, no error) since authentication is irrelevant in dry-run.
+func TestDryRunRunner_SudoVSkipped(t *testing.T) {
+	inner := testutil.NewFakeRunner()
+	d := NewDryRunRunner(inner)
+	if err := d.RunPassthrough("sudo", "-v"); err != nil {
+		t.Errorf("RunPassthrough(sudo, -v) should return nil in dry-run, got %v", err)
+	}
+	// Inner runner must NOT be called.
+	if inner.CalledWith("sudo", "-v") {
+		t.Error("sudo -v should not reach inner runner in dry-run")
+	}
+}
+
 // TestDryRunRunner_MutatingCallsReturnEmpty verifies that skipped mutating
 // calls return empty output and nil error (so callers treat dry-run as success).
 func TestDryRunRunner_MutatingCallsReturnEmpty(t *testing.T) {

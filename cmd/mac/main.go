@@ -3,6 +3,7 @@ package main
 import (
 	"fmt"
 	"os"
+	"strings"
 )
 
 const version = "1.0.0"
@@ -17,12 +18,15 @@ Commands:
   apply       Apply the configuration (default)
   diff        Show what would change without applying
   validate    Check the config file for errors
+  export      Generate a mac.toml from current system state
+  init        Interactive setup wizard — create your first mac.toml
   uninstall   Remove everything mac applied
   version     Print version
 
 Options:
-  -c, --config <path>   Config file (default: ~/.config/mac/mac.toml)
-  -h, --help            Show this help
+  -c, --config <path>    Config file (default: ~/.config/mac/mac.toml)
+  -o, --output <path>    Output path for export / init (default: stdout / config path)
+  -h, --help             Show this help
 
 Uninstall options:
   --dry-run   Show what would be removed without making changes
@@ -32,12 +36,16 @@ Environment:
   MAC_CONFIG   Override config path (same as -c)
 
 Examples:
-  mac                          # apply config (prompts for URL on first run)
-  mac apply -c ~/my-setup.toml # apply a specific config file
-  mac validate                 # check config for errors
-  mac diff                     # preview changes
-  mac uninstall --dry-run      # preview what uninstall would do
-  mac uninstall --yes          # uninstall without prompts`)
+  mac                            # apply config (prompts for URL on first run)
+  mac apply -c ~/my-setup.toml   # apply a specific config file
+  mac diff                       # preview all changes (safe, no writes)
+  mac diff -c company.toml       # preview a company config on your machine
+  mac validate                   # check config for errors
+  mac export                     # print mac.toml from current Homebrew state
+  mac export -o ~/mac.toml       # save to file instead of stdout
+  mac init                       # guided setup wizard
+  mac uninstall --dry-run        # preview what uninstall would do
+  mac uninstall --yes            # uninstall without prompts`)
 }
 
 func main() {
@@ -45,6 +53,7 @@ func main() {
 
 	command := "apply"
 	configFlag := ""
+	outputFlag := ""
 	yes := false
 	dryRun := false
 
@@ -64,11 +73,18 @@ func main() {
 			}
 			i++
 			configFlag = args[i]
+		case "-o", "--output":
+			if i+1 >= len(args) {
+				fmt.Fprintln(os.Stderr, "Error: --output requires a path")
+				os.Exit(1)
+			}
+			i++
+			outputFlag = args[i]
 		case "-y", "--yes":
 			yes = true
 		case "--dry-run":
 			dryRun = true
-		case "apply", "diff", "validate", "uninstall":
+		case "apply", "diff", "validate", "export", "init", "uninstall":
 			command = args[i]
 		default:
 			if args[i][0] != '-' {
@@ -80,6 +96,16 @@ func main() {
 			}
 		}
 		i++
+	}
+
+	// export and init don't need a config file to load.
+	if command == "export" {
+		runExport(DefaultRunner)
+		return
+	}
+	if command == "init" {
+		runInit(DefaultRunner, outputFlag)
+		return
 	}
 
 	configPath, err := resolveConfigPath(configFlag)
@@ -117,84 +143,82 @@ func runValidate(cfg *Config, path string) {
 	Info(fmt.Sprintf("Defaults domains: %d", len(cfg.Defaults)))
 	Info(fmt.Sprintf("Stow packages: %d", len(cfg.Dotfiles.StowPackages)))
 	Info(fmt.Sprintf("Post-install hooks: %d", len(cfg.Hooks.PostInstall)))
+
+	// Validate [meta] skip section names.
+	for _, s := range cfg.Meta.Skip {
+		if !ValidSections[s] {
+			valid := make([]string, 0, len(ValidSections))
+			for k := range ValidSections {
+				valid = append(valid, k)
+			}
+			Fail(fmt.Sprintf("Unknown section in [meta] skip: %q (valid: %s)",
+				s, strings.Join(valid, ", ")))
+			os.Exit(1)
+		}
+	}
+	if len(cfg.Meta.Skip) > 0 {
+		Info(fmt.Sprintf("Skipped sections: %s", strings.Join(cfg.Meta.Skip, ", ")))
+	}
 }
 
+// runDiff previews all changes by running the full apply pipeline with a
+// DryRunRunner — no writes are made to the system.
 func runDiff(cfg *Config) {
 	Header()
 	Info("dry run — showing what would change")
-
-	if len(cfg.Packages.Formulae) > 0 {
-		Banner("Homebrew Formulae")
-		installed := diffInstalledFormulae()
-		for _, pkg := range cfg.Packages.Formulae {
-			if installed[pkg] {
-				Ok(pkg + " (already installed)")
-			} else {
-				Info(pkg + " (would install)")
-			}
-		}
-	}
-
-	if len(cfg.Packages.Casks) > 0 {
-		Banner("Homebrew Casks")
-		installed := diffInstalledCasks()
-		for _, cask := range cfg.Packages.Casks {
-			if installed[cask] {
-				Ok(cask + " (already installed)")
-			} else {
-				Info(cask + " (would install)")
-			}
-		}
-	}
-
-	if len(cfg.Defaults) > 0 {
-		Banner("macOS Defaults")
-		for domain, entries := range cfg.Defaults {
-			Info("Domain: " + domain)
-			for key, val := range entries {
-				current := diffCurrentDefault(domain, key)
-				desired := fmt.Sprintf("%v", val)
-				if current == desired {
-					Ok(fmt.Sprintf("  %s = %v (no change)", key, val))
-				} else {
-					Warn(fmt.Sprintf("  %s: %s → %v", key, current, val))
-				}
-			}
-		}
-	}
-
-	if BoolVal(cfg.System.PamTID) {
-		Banner("System Tweaks")
-		Info("Touch ID for sudo: would enable if not present")
-	}
+	doApply(cfg, NewDryRunRunner(DefaultRunner), makeSkipSet(cfg))
 }
 
 func runApply(cfg *Config) {
-	r := DefaultRunner
 	Header()
 
 	Info("Requesting administrator privileges …")
-	if err := r.RunPassthrough("sudo", "-v"); err != nil {
+	if err := DefaultRunner.RunPassthrough("sudo", "-v"); err != nil {
 		Fail("Could not acquire sudo. Aborting.")
 		os.Exit(1)
 	}
 
 	go keepSudoAlive()
 
-	applyMachine(cfg, r)
-	EnsureHomebrew(r)
-	InstallTaps(cfg, r)
-	InstallFormulae(cfg, r)
-	InstallCasks(cfg, r)
-	InstallMAS(cfg, r)
-	applyDotfiles(cfg, r)
-	applyShell(cfg, r)
-	applyDefaults(cfg, r)
-	applySystem(cfg, r)
-	runHooks(cfg, r)
-	restartServices(r)
+	doApply(cfg, DefaultRunner, makeSkipSet(cfg))
 
 	Done()
+}
+
+// doApply runs all apply operations via r, skipping sections listed in skip.
+// Used by both runApply (real runner) and runDiff (DryRunRunner).
+func doApply(cfg *Config, r Runner, skip map[string]bool) {
+	if !skip["machine"] {
+		applyMachine(cfg, r)
+	}
+	if !skip["packages"] {
+		EnsureHomebrew(r)
+		InstallTaps(cfg, r)
+		InstallFormulae(cfg, r)
+		InstallCasks(cfg, r)
+	}
+	if !skip["mas"] {
+		InstallMAS(cfg, r)
+	}
+	if !skip["dotfiles"] {
+		applyDotfiles(cfg, r)
+	}
+	if !skip["shell"] {
+		applyShell(cfg, r)
+	}
+	if !skip["defaults"] {
+		applyDefaults(cfg, r)
+	}
+	if !skip["system"] {
+		applySystem(cfg, r)
+	}
+	if !skip["hooks"] {
+		runHooks(cfg, r)
+	}
+	// Restart UI services only when defaults or system were applied.
+	if !skip["defaults"] || !skip["system"] {
+		restartServices(r)
+	}
 }
 
 func keepSudoAlive() {
@@ -266,22 +290,4 @@ func totalDefaultsCount(cfg *Config) int {
 		n += len(keys)
 	}
 	return n
-}
-
-func diffInstalledFormulae() map[string]bool {
-	out, _ := Run("brew", "list", "--formula", "-1")
-	return toSet(out)
-}
-
-func diffInstalledCasks() map[string]bool {
-	out, _ := Run("brew", "list", "--cask", "-1")
-	return toSet(out)
-}
-
-func diffCurrentDefault(domain, key string) string {
-	out, err := Run("defaults", "read", domain, key)
-	if err != nil {
-		return "(not set)"
-	}
-	return out
 }

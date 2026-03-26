@@ -378,3 +378,118 @@ func TestScenarioD_FullUninstall(t *testing.T) {
 		t.Error("expected defaults delete for autohide")
 	}
 }
+
+// ── Scenario D: mac diff via DryRunRunner covers ALL sections ─────────────
+
+// TestScenarioD_DiffCoversAllSections verifies that runDiff (via DryRunRunner)
+// exercises the full apply pipeline — machine, packages, dotfiles, shell,
+// defaults, system, hooks — and never calls the inner runner for mutating ops.
+func TestScenarioD_DiffCoversAllSections(t *testing.T) {
+	dir := t.TempDir()
+	dotfilesDest := filepath.Join(dir, "dotfiles")
+	tr := true
+
+	inner := testutil.NewFakeRunner()
+	inner.WhenWhich("brew", true)
+	inner.WhenWhich("stow", true)
+	inner.WhenWhich("mas", true)
+	inner.When("brew", "tap").Returns("", nil)
+	inner.When("brew", "list", "--formula", "-1").Returns("", nil)
+	inner.When("brew", "list", "--cask", "-1").Returns("", nil)
+	inner.When("mas", "list").Returns("", nil)
+
+	dr := NewDryRunRunner(inner)
+
+	cfg := &Config{
+		Machine:  MachineConfig{ComputerName: "test-mac", LocalHostname: "test-mac-local"},
+		Packages: PackagesConfig{Taps: []string{"homebrew/cask-fonts"}, Formulae: []string{"git"}, Casks: []string{"arc"}},
+		MAS:      MASConfig{Apps: []MASApp{{ID: 1, Name: "TestApp"}}},
+		Dotfiles: DotfilesConfig{Repo: "https://github.com/user/dotfiles", Dest: dotfilesDest, Method: "stow", StowPackages: []string{"zsh"}},
+		Shell:    ShellConfig{Default: "/bin/zsh"},
+		Defaults: map[string]map[string]any{"com.apple.dock": {"autohide": true}},
+		System:   SystemConfig{PamTID: &tr},
+		Hooks:    HooksConfig{PostInstall: []string{"echo done"}},
+	}
+
+	doApply(cfg, dr, makeSkipSet(cfg))
+
+	// Mutating commands must NOT reach inner runner.
+	if inner.CalledWithSudo("scutil", "--set", "ComputerName", "test-mac") {
+		t.Error("diff must not write ComputerName")
+	}
+	if inner.CalledWith("brew", "install", "git") {
+		t.Error("diff must not install formulae")
+	}
+	if inner.CalledWith("brew", "install", "--cask", "arc") {
+		t.Error("diff must not install casks")
+	}
+	if inner.CalledWith("defaults", "write", "com.apple.dock", "autohide", "-bool", "true") {
+		t.Error("diff must not write defaults")
+	}
+
+	// Read-only commands SHOULD reach inner runner (to show accurate state).
+	if !inner.CalledWith("brew", "list", "--formula", "-1") {
+		t.Error("diff must read brew formula list for accurate output")
+	}
+}
+
+// ── Scenario E: [meta] skip ───────────────────────────────────────────────
+
+// TestScenarioE_SkipSections verifies that sections listed in [meta] skip
+// are fully bypassed during doApply — no commands for those sections run.
+func TestScenarioE_SkipSections(t *testing.T) {
+	tr := true
+	cfg := &Config{
+		Meta:     MetaConfig{Skip: []string{"machine", "system", "shell"}},
+		Machine:  MachineConfig{ComputerName: "should-not-be-set"},
+		Packages: PackagesConfig{Formulae: []string{"git"}},
+		Shell:    ShellConfig{Default: "/bin/zsh"},
+		Defaults: map[string]map[string]any{"com.apple.dock": {"autohide": true}},
+		System:   SystemConfig{PamTID: &tr},
+	}
+
+	r := testutil.NewFakeRunner()
+	r.WhenWhich("brew", true)
+	r.When("brew", "tap").Returns("", nil)
+	r.When("brew", "update", "--quiet").Returns("", nil)
+	r.When("brew", "list", "--formula", "-1").Returns("", nil)
+	r.When("brew", "list", "--cask", "-1").Returns("", nil)
+
+	doApply(cfg, r, makeSkipSet(cfg))
+
+	// machine section skipped
+	if r.CalledWithSudo("scutil", "--set", "ComputerName", "should-not-be-set") {
+		t.Error("machine section should be skipped")
+	}
+	// system section skipped (no PAM)
+	for _, call := range r.Calls() {
+		if call == "shell:echo 'auth       sufficient     pam_tid.so' | sudo tee /etc/pam.d/sudo_local >/dev/null" {
+			t.Error("system section should be skipped (PAM must not run)")
+		}
+	}
+	// shell section skipped
+	if r.CalledWith("chsh", "-s", "/bin/zsh") {
+		t.Error("shell section should be skipped")
+	}
+	// packages section NOT skipped
+	if !r.CalledWith("brew", "list", "--formula", "-1") {
+		t.Error("packages section should run (not skipped)")
+	}
+}
+
+// TestMakeSkipSet verifies makeSkipSet converts the Meta.Skip slice to a set.
+func TestMakeSkipSet(t *testing.T) {
+	cfg := &Config{
+		Meta: MetaConfig{Skip: []string{"machine", "system"}},
+	}
+	skip := makeSkipSet(cfg)
+	if !skip["machine"] {
+		t.Error("expected machine to be in skip set")
+	}
+	if !skip["system"] {
+		t.Error("expected system to be in skip set")
+	}
+	if skip["packages"] {
+		t.Error("packages should not be in skip set")
+	}
+}

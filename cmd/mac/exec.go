@@ -125,23 +125,130 @@ func (d *DryRunRunner) Run(name string, args ...string) (string, error) {
 	if isReadOnly(name, args) {
 		return d.inner.Run(name, args...)
 	}
-	Info(fmt.Sprintf("[dry-run] %s", strings.Join(append([]string{name}, args...), " ")))
+	Info(humanSummary(name, args))
 	return "", nil
 }
 
 func (d *DryRunRunner) RunSudo(name string, args ...string) (string, error) {
-	Info(fmt.Sprintf("[dry-run] sudo %s", strings.Join(append([]string{name}, args...), " ")))
+	Info(humanSudoSummary(name, args))
 	return "", nil
 }
 
 func (d *DryRunRunner) RunPassthrough(name string, args ...string) error {
-	Info(fmt.Sprintf("[dry-run] %s", strings.Join(append([]string{name}, args...), " ")))
+	// Skip sudo authentication pings — not meaningful in dry-run.
+	if name == "sudo" && len(args) == 1 && args[0] == "-v" {
+		return nil
+	}
+	Info(humanSummary(name, args))
 	return nil
 }
 
 func (d *DryRunRunner) RunShell(command string) (string, error) {
-	Info("[dry-run] shell: " + command)
+	display := command
+	if len(display) > 80 {
+		display = display[:77] + "…"
+	}
+	Info("would run: " + display)
 	return "", nil
+}
+
+// humanSummary maps a command + args to a concise human-readable description
+// for use in dry-run / diff output.
+func humanSummary(name string, args []string) string {
+	switch name {
+	case "brew":
+		if len(args) == 0 {
+			break
+		}
+		switch args[0] {
+		case "install":
+			if len(args) >= 3 && args[1] == "--cask" {
+				return "would install cask: " + args[2]
+			}
+			if len(args) >= 2 {
+				return "would install formula: " + args[1]
+			}
+		case "uninstall":
+			if len(args) >= 3 && args[1] == "--cask" {
+				return "would uninstall cask: " + args[2]
+			}
+			if len(args) >= 2 {
+				return "would uninstall formula: " + args[1]
+			}
+		case "tap":
+			if len(args) >= 2 {
+				return "would tap: " + args[1]
+			}
+		case "untap":
+			if len(args) >= 2 {
+				return "would untap: " + args[1]
+			}
+		case "update":
+			return "would update Homebrew"
+		}
+	case "mas":
+		if len(args) >= 2 {
+			switch args[0] {
+			case "install":
+				return "would install MAS app: " + args[1]
+			case "uninstall":
+				return "would uninstall MAS app: " + args[1]
+			}
+		}
+	case "defaults":
+		if len(args) >= 3 && args[0] == "write" {
+			val := ""
+			if len(args) >= 5 {
+				val = " → " + strings.Join(args[4:], " ")
+			}
+			return fmt.Sprintf("would set %s %s%s", args[1], args[2], val)
+		}
+		if len(args) >= 3 && args[0] == "delete" {
+			return fmt.Sprintf("would delete default %s %s", args[1], args[2])
+		}
+	case "git":
+		if len(args) >= 3 && args[0] == "clone" {
+			return "would clone dotfiles: " + args[1]
+		}
+		if len(args) >= 2 && args[0] == "-C" {
+			return "would pull dotfiles in " + args[1]
+		}
+	case "stow":
+		if len(args) > 0 {
+			return "would stow: " + args[len(args)-1]
+		}
+	case "chsh":
+		for i, a := range args {
+			if a == "-s" && i+1 < len(args) {
+				return "would change default shell: " + args[i+1]
+			}
+		}
+	case "killall":
+		if len(args) >= 1 {
+			return "would restart service: " + args[0]
+		}
+	case "rm":
+		return "would remove: " + strings.Join(args, " ")
+	case "chflags":
+		return "would set file flags: " + strings.Join(args, " ")
+	}
+	// Fallback: show the command verbatim.
+	cmd := name
+	if len(args) > 0 {
+		cmd += " " + strings.Join(args, " ")
+	}
+	return "[would run] " + cmd
+}
+
+// humanSudoSummary maps a sudo command + args to a human-readable description.
+func humanSudoSummary(name string, args []string) string {
+	switch name {
+	case "scutil":
+		if len(args) >= 3 && args[0] == "--set" {
+			return fmt.Sprintf("would set %s: %s", args[1], args[2])
+		}
+	}
+	return humanSummary(name, args)
 }
 
 func (d *DryRunRunner) Which(name string) bool {
