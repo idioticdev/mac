@@ -68,13 +68,35 @@ GitHub Actions (`.github/workflows/release.yml`) builds cross-platform binaries 
 Use the `/browse` skill from gstack for all web browsing. Never use `mcp__claude-in-chrome__*` tools.
 
 Available gstack skills:
+- `/office-hours` — YC-style brainstorming and product idea exploration
 - `/plan-ceo-review` — Review a plan from a CEO/product perspective
 - `/plan-eng-review` — Review a plan from an engineering perspective
-- `/review` — Code review
-- `/ship` — Ship a feature end-to-end
+- `/plan-design-review` — Designer's eye review of a plan
+- `/design-consultation` — Create a full design system and DESIGN.md
+- `/design-html` — Generate HTML design mockups
+- `/design-review` — Visual QA audit of a live site with fixes
+- `/review` — Pre-landing PR code review
+- `/ship` — Ship a feature end-to-end (tests, changelog, PR)
+- `/land-and-deploy` — Merge PR, wait for CI/deploy, verify production
+- `/canary` — Post-deploy canary monitoring
+- `/benchmark` — Performance regression detection
 - `/browse` — Browse the web (use this instead of MCP browser tools)
-- `/qa` — QA testing
-- `/setup-browser-cookies` — Set up browser cookies for authenticated browsing
-- `/retro` — Run a retrospective
+- `/connect-chrome` — Connect to a running Chrome instance
+- `/qa` — QA test a site and fix bugs found
+- `/qa-only` — QA test a site, report only (no fixes)
+- `/setup-browser-cookies` — Import browser cookies for authenticated testing
+- `/setup-deploy` — Configure deployment settings for /land-and-deploy
+- `/retro` — Weekly engineering retrospective
+- `/investigate` — Systematic root cause debugging
+- `/document-release` — Post-ship documentation update
+- `/codex` — OpenAI Codex second opinion (review, challenge, consult)
+- `/cso` — Chief Security Officer security audit
+- `/autoplan` — Auto-run all plan reviews with auto-decisions
+- `/careful` — Safety guardrails for destructive commands
+- `/freeze` — Restrict edits to a specific directory
+- `/guard` — Full safety mode (careful + freeze combined)
+- `/unfreeze` — Clear the freeze boundary
+- `/gstack-upgrade` — Upgrade gstack to latest version
+- `/learn` — Learn a new skill from a URL or description
 
-If gstack skills aren't working, run `cd .claude/skills/gstack && ./setup` to build the binary and register skills.
+If gstack skills aren't working, run `cd ~/.claude/skills/gstack && ./setup` to build the binary and register skills.
