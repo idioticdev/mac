@@ -1,6 +1,7 @@
 package testutil
 
 import (
+	"os"
 	"slices"
 	"strings"
 )
@@ -13,9 +14,9 @@ type response struct {
 // FakeRunner is a test double for the Runner interface.
 // It records all calls and returns pre-configured responses.
 type FakeRunner struct {
-	responses  map[string]response
-	whichMap   map[string]bool
-	calls      []string
+	responses map[string]response
+	whichMap  map[string]bool
+	calls     []string
 }
 
 // NewFakeRunner constructs a FakeRunner with empty state.
@@ -138,4 +139,19 @@ func (f *FakeRunner) CalledWithSudo(name string, args ...string) bool {
 // CalledWithShell reports whether RunShell was called with the given command.
 func (f *FakeRunner) CalledWithShell(command string) bool {
 	return slices.Contains(f.calls, "shell:"+command)
+}
+
+// WriteFile records the write call (keyed by path) and returns any configured error.
+func (f *FakeRunner) WriteFile(path string, _ []byte, _ os.FileMode) error {
+	key := "writefile:" + path
+	f.calls = append(f.calls, key)
+	if r, ok := f.responses[key]; ok {
+		return r.err
+	}
+	return nil
+}
+
+// CalledWriteFile reports whether WriteFile was called for the given path.
+func (f *FakeRunner) CalledWriteFile(path string) bool {
+	return slices.Contains(f.calls, "writefile:"+path)
 }

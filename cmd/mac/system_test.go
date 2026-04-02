@@ -1,6 +1,9 @@
 package main
 
 import (
+	"os"
+	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/youruser/mac/cmd/mac/testutil"
@@ -144,5 +147,191 @@ func TestUninstallPamTID_AbsentSkipped(t *testing.T) {
 		if len(c) > 5 && c[:5] == "shell" {
 			t.Errorf("unexpected shell call when pam_tid.so absent: %q", c)
 		}
+	}
+}
+
+// ── buildHidutilJSON ─────────────────────────────────────────────────────────
+
+func TestBuildHidutilJSON_SingleMapping(t *testing.T) {
+	mappings := []KeyRemapConfig{{From: "caps_lock", To: "escape"}}
+	got, err := buildHidutilJSON(mappings)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	// Verify both HID values appear in the output.
+	if !strings.Contains(got, "30064771129") { // 0x700000039 decimal
+		t.Errorf("expected CapsLock HID value in output, got: %s", got)
+	}
+	if !strings.Contains(got, "30064771113") { // 0x700000029 decimal
+		t.Errorf("expected Escape HID value in output, got: %s", got)
+	}
+}
+
+func TestBuildHidutilJSON_TwoMappings(t *testing.T) {
+	mappings := []KeyRemapConfig{
+		{From: "caps_lock", To: "escape"},
+		{From: "left_fn", To: "left_control"},
+	}
+	got, err := buildHidutilJSON(mappings)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if !strings.Contains(got, "UserKeyMapping") {
+		t.Errorf("expected UserKeyMapping key, got: %s", got)
+	}
+}
+
+func TestBuildHidutilJSON_UnknownFromKey(t *testing.T) {
+	mappings := []KeyRemapConfig{{From: "caps_lck", To: "escape"}}
+	_, err := buildHidutilJSON(mappings)
+	if err == nil {
+		t.Error("expected error for unknown From key, got nil")
+	}
+}
+
+func TestBuildHidutilJSON_UnknownToKey(t *testing.T) {
+	mappings := []KeyRemapConfig{{From: "caps_lock", To: "esc"}}
+	_, err := buildHidutilJSON(mappings)
+	if err == nil {
+		t.Error("expected error for unknown To key, got nil")
+	}
+}
+
+// ── validateKeyRemapping ─────────────────────────────────────────────────────
+
+func TestValidateKeyRemapping_Valid(t *testing.T) {
+	cfg := &Config{System: SystemConfig{KeyRemapping: []KeyRemapConfig{
+		{From: "caps_lock", To: "escape"},
+		{From: "left_fn", To: "left_control"},
+	}}}
+	if errs := validateKeyRemapping(cfg); len(errs) != 0 {
+		t.Errorf("expected no errors, got: %v", errs)
+	}
+}
+
+func TestValidateKeyRemapping_UnknownKey(t *testing.T) {
+	cfg := &Config{System: SystemConfig{KeyRemapping: []KeyRemapConfig{
+		{From: "caps_lck", To: "esc"},
+	}}}
+	errs := validateKeyRemapping(cfg)
+	if len(errs) != 2 {
+		t.Errorf("expected 2 errors (bad from + bad to), got %d: %v", len(errs), errs)
+	}
+}
+
+// ── applyKeyRemapping ────────────────────────────────────────────────────────
+
+func TestApplyKeyRemapping_Empty(t *testing.T) {
+	r := testutil.NewFakeRunner()
+	applyKeyRemapping(&Config{}, r)
+	if len(r.Calls()) != 0 {
+		t.Errorf("expected no calls for empty config, got: %v", r.Calls())
+	}
+}
+
+func TestApplyKeyRemapping_UnknownKey(t *testing.T) {
+	r := testutil.NewFakeRunner()
+	cfg := &Config{System: SystemConfig{KeyRemapping: []KeyRemapConfig{
+		{From: "not_a_key", To: "escape"},
+	}}}
+	applyKeyRemapping(cfg, r)
+	if r.CalledWriteFile(filepath.Join(r.ExpandHome(keyRemapPlistDir), "com.local.mac-keyremap.plist")) {
+		t.Error("should not write plist when key name is unknown")
+	}
+}
+
+func TestApplyKeyRemapping_WritesAndLoads(t *testing.T) {
+	origDir := keyRemapPlistDir
+	keyRemapPlistDir = t.TempDir()
+	t.Cleanup(func() { keyRemapPlistDir = origDir })
+
+	r := testutil.NewFakeRunner()
+	cfg := &Config{System: SystemConfig{KeyRemapping: []KeyRemapConfig{
+		{From: "caps_lock", To: "escape"},
+	}}}
+	applyKeyRemapping(cfg, r)
+
+	plistPath := filepath.Join(keyRemapPlistDir, "com.local.mac-keyremap.plist")
+	if !r.CalledWriteFile(plistPath) {
+		t.Errorf("expected WriteFile call for %s", plistPath)
+	}
+	if !r.CalledWith("launchctl", "load", plistPath) {
+		t.Errorf("expected launchctl load call for %s", plistPath)
+	}
+}
+
+func TestApplyKeyRemapping_Idempotent(t *testing.T) {
+	origDir := keyRemapPlistDir
+	tmp := t.TempDir()
+	keyRemapPlistDir = tmp
+	t.Cleanup(func() { keyRemapPlistDir = origDir })
+
+	cfg := &Config{System: SystemConfig{KeyRemapping: []KeyRemapConfig{
+		{From: "caps_lock", To: "escape"},
+	}}}
+
+	// Pre-write a plist containing the expected JSON so idempotency check triggers.
+	hidutilJSON, _ := buildHidutilJSON(cfg.System.KeyRemapping)
+	plistPath := filepath.Join(tmp, "com.local.mac-keyremap.plist")
+	os.WriteFile(plistPath, []byte(buildKeyRemapPlist(hidutilJSON)), 0644)
+
+	r := testutil.NewFakeRunner()
+	applyKeyRemapping(cfg, r)
+
+	if r.CalledWith("launchctl", "load", plistPath) {
+		t.Error("should not reload launchctl when plist is already up to date")
+	}
+}
+
+// ── uninstallKeyRemapping ────────────────────────────────────────────────────
+
+func TestUninstallKeyRemapping_Empty(t *testing.T) {
+	r := testutil.NewFakeRunner()
+	uninstallKeyRemapping(&Config{}, r)
+	if len(r.Calls()) != 0 {
+		t.Errorf("expected no calls for empty config, got: %v", r.Calls())
+	}
+}
+
+func TestUninstallKeyRemapping_PlistAbsent(t *testing.T) {
+	origDir := keyRemapPlistDir
+	keyRemapPlistDir = t.TempDir()
+	t.Cleanup(func() { keyRemapPlistDir = origDir })
+
+	r := testutil.NewFakeRunner()
+	cfg := &Config{System: SystemConfig{KeyRemapping: []KeyRemapConfig{
+		{From: "caps_lock", To: "escape"},
+	}}}
+	uninstallKeyRemapping(cfg, r)
+
+	plistPath := filepath.Join(keyRemapPlistDir, "com.local.mac-keyremap.plist")
+	if r.CalledWith("launchctl", "unload", plistPath) {
+		t.Error("should not call launchctl unload when plist is absent")
+	}
+}
+
+func TestUninstallKeyRemapping_RemovesAndResets(t *testing.T) {
+	origDir := keyRemapPlistDir
+	tmp := t.TempDir()
+	keyRemapPlistDir = tmp
+	t.Cleanup(func() { keyRemapPlistDir = origDir })
+
+	plistPath := filepath.Join(tmp, "com.local.mac-keyremap.plist")
+	os.WriteFile(plistPath, []byte("<plist/>"), 0644)
+
+	r := testutil.NewFakeRunner()
+	cfg := &Config{System: SystemConfig{KeyRemapping: []KeyRemapConfig{
+		{From: "caps_lock", To: "escape"},
+	}}}
+	uninstallKeyRemapping(cfg, r)
+
+	if _, err := os.Stat(plistPath); !os.IsNotExist(err) {
+		t.Error("expected plist file to be removed")
+	}
+	if !r.CalledWith("launchctl", "unload", plistPath) {
+		t.Error("expected launchctl unload call")
+	}
+	if !r.CalledWith("hidutil", "property", "--set", `{"UserKeyMapping":[]}`) {
+		t.Error("expected hidutil reset call")
 	}
 }

@@ -16,6 +16,7 @@ type Runner interface {
 	RunShell(command string) (string, error)
 	Which(name string) bool
 	ExpandHome(path string) string
+	WriteFile(path string, data []byte, perm os.FileMode) error
 }
 
 // SystemRunner is the real implementation that executes commands on the OS.
@@ -46,6 +47,10 @@ func (s *SystemRunner) Which(name string) bool {
 
 func (s *SystemRunner) ExpandHome(path string) string {
 	return ExpandHome(path)
+}
+
+func (s *SystemRunner) WriteFile(path string, data []byte, perm os.FileMode) error {
+	return os.WriteFile(path, data, perm)
 }
 
 // Run executes a command and returns its combined stdout/stderr output.
@@ -227,6 +232,19 @@ func humanSummary(name string, args []string) string {
 		if len(args) >= 1 {
 			return "would restart service: " + args[0]
 		}
+	case "launchctl":
+		if len(args) >= 2 {
+			switch args[0] {
+			case "load":
+				return "would load LaunchAgent: " + args[1]
+			case "unload":
+				return "would unload LaunchAgent: " + args[1]
+			}
+		}
+	case "hidutil":
+		if len(args) >= 3 && args[0] == "property" && args[1] == "--set" {
+			return "would configure hidutil: " + args[2]
+		}
 	case "rm":
 		return "would remove: " + strings.Join(args, " ")
 	case "chflags":
@@ -257,6 +275,11 @@ func (d *DryRunRunner) Which(name string) bool {
 
 func (d *DryRunRunner) ExpandHome(path string) string {
 	return d.inner.ExpandHome(path)
+}
+
+func (d *DryRunRunner) WriteFile(path string, _ []byte, _ os.FileMode) error {
+	Info("would write: " + path)
+	return nil
 }
 
 // ExpandHome expands a leading ~ to the user's home directory.

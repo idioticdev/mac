@@ -154,7 +154,17 @@ DoNotOfferNewDisksForBackup = true
 pam_tid            = true               # Enable Touch ID for sudo
 reveal_library     = true               # Unhide ~/Library
 screenshots_dir    = "~/Screenshots"    # Created if missing
-expand_save_dialog = true               # Already handled by NSGlobalDomain above; kept for clarity
+
+# Key remapping — persists via hidutil LaunchAgent (survives reboots).
+# Valid keys: caps_lock, escape, return, tab, space, backspace, delete_forward,
+#   left_shift, right_shift, left_control, right_control,
+#   left_option, right_option, left_command, right_command,
+#   left_fn (Globe/Fn on Apple Silicon only — silently ignored on Intel),
+#   f1–f12
+# key_remapping = [
+#     { from = "caps_lock", to = "escape" },
+#     { from = "left_fn",   to = "left_control" },
+# ]
 
 # ---------- Post-install hooks ----------------------------------------------
 # Shell commands run at the very end. Use for anything not covered above.

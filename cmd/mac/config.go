@@ -27,16 +27,16 @@ type MetaConfig struct {
 }
 
 type Config struct {
-	Meta     MetaConfig                       `toml:"meta"`
-	Extends  []string                         `toml:"extends"`
-	Machine  MachineConfig                    `toml:"machine"`
-	Packages PackagesConfig                   `toml:"packages"`
-	MAS      MASConfig                        `toml:"mas"`
-	Dotfiles DotfilesConfig                   `toml:"dotfiles"`
-	Shell    ShellConfig                      `toml:"shell"`
-	Defaults map[string]map[string]any        `toml:"defaults"`
-	System   SystemConfig                     `toml:"system"`
-	Hooks    HooksConfig                      `toml:"hooks"`
+	Meta     MetaConfig                `toml:"meta"`
+	Extends  []string                  `toml:"extends"`
+	Machine  MachineConfig             `toml:"machine"`
+	Packages PackagesConfig            `toml:"packages"`
+	MAS      MASConfig                 `toml:"mas"`
+	Dotfiles DotfilesConfig            `toml:"dotfiles"`
+	Shell    ShellConfig               `toml:"shell"`
+	Defaults map[string]map[string]any `toml:"defaults"`
+	System   SystemConfig              `toml:"system"`
+	Hooks    HooksConfig               `toml:"hooks"`
 }
 
 // makeSkipSet returns a set of section names to skip, derived from cfg.Meta.Skip.
@@ -80,9 +80,15 @@ type ShellConfig struct {
 }
 
 type SystemConfig struct {
-	PamTID         *bool  `toml:"pam_tid"`
-	RevealLibrary  *bool  `toml:"reveal_library"`
-	ScreenshotsDir string `toml:"screenshots_dir"`
+	PamTID         *bool            `toml:"pam_tid"`
+	RevealLibrary  *bool            `toml:"reveal_library"`
+	ScreenshotsDir string           `toml:"screenshots_dir"`
+	KeyRemapping   []KeyRemapConfig `toml:"key_remapping"`
+}
+
+type KeyRemapConfig struct {
+	From string `toml:"from"`
+	To   string `toml:"to"`
 }
 
 type HooksConfig struct {

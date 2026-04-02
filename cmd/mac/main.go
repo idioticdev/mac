@@ -159,6 +159,10 @@ func runValidate(cfg *Config, path string) {
 	if len(cfg.Meta.Skip) > 0 {
 		Info(fmt.Sprintf("Skipped sections: %s", strings.Join(cfg.Meta.Skip, ", ")))
 	}
+
+	for _, msg := range validateKeyRemapping(cfg) {
+		Fail(msg)
+	}
 }
 
 // runDiff previews all changes by running the full apply pipeline with a
