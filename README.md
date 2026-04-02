@@ -249,10 +249,17 @@ apps = [
 ```toml
 [dotfiles]
 repo           = "git@github.com:you/dotfiles.git"
-dest           = "~/.dotfiles"
-method         = "stow"
+dest           = "~/.dotfiles"   # where to clone (default: ~/.dotfiles)
+method         = "stow"          # "stow" | "clone-only" (default: clone-only)
 stow_packages  = ["zsh", "nvim", "git", "tmux"]
 ```
+
+| `method` | Behavior |
+|----------|----------|
+| `clone-only` | Clone (or pull) the repo. No symlinking. Default when omitted. |
+| `stow` | Clone/pull, then run `stow -t ~ <package>` for each entry in `stow_packages`. Installs GNU Stow via Homebrew if missing. |
+
+`stow_packages` lists subdirectory names inside `dest` to activate. Each becomes `stow -d <dest> -t ~ --restow <package>`.
 
 ### `[shell]`
 
@@ -294,7 +301,26 @@ diff /tmp/before.plist /tmp/after.plist
 pam_tid         = true            # Enable Touch ID for sudo
 reveal_library  = true            # Unhide ~/Library
 screenshots_dir = "~/Screenshots" # Created if missing
+
+# Key remapping — persists across reboots via hidutil LaunchAgent.
+# mac apply writes ~/Library/LaunchAgents/com.local.mac-keyremap.plist
+# and loads it immediately. mac uninstall removes it and resets hidutil.
+key_remapping = [
+    { from = "caps_lock", to = "escape" },
+    { from = "left_fn",   to = "left_control" },
+]
 ```
+
+**`key_remapping` — available key names:**
+
+| Category | Keys |
+|----------|------|
+| Special | `caps_lock`, `escape`, `return`, `tab`, `space`, `backspace`, `delete_forward` |
+| Left modifiers | `left_shift`, `left_control`, `left_option`, `left_command`, `left_fn` |
+| Right modifiers | `right_shift`, `right_control`, `right_option`, `right_command` |
+| Function keys | `f1` – `f12` |
+
+> **Note:** `left_fn` is the Globe/Fn key on Apple Silicon keyboards. It is silently ignored on Intel Macs — use [Karabiner-Elements](https://karabiner-elements.pqrs.org/) instead.
 
 ### `extends` — Template inheritance
 
@@ -319,12 +345,12 @@ post_install = [
 
 ## Why mac?
 
-| Tool | Packages | Dotfiles | Defaults | Touch ID | One Config | Simple Install |
-|------|----------|----------|----------|----------|------------|----------------|
-| **mac** | ✅ | ✅ Stow | ✅ | ✅ | ✅ TOML | ✅ one binary |
-| nix-darwin | ✅ | ✅ | ✅ | ✅ | Nix (steep) | ❌ |
-| Homebrew Bundle | ✅ | ❌ | ❌ | ❌ | Brewfile | ✅ |
-| Ansible | ✅ | ✅ | ✅ | ✅ | YAML (heavy) | ❌ |
+| Tool | Packages | Dotfiles | Defaults | Touch ID | Key Remap | One Config | Simple Install |
+|------|----------|----------|----------|----------|-----------|------------|----------------|
+| **mac** | ✅ | ✅ Stow | ✅ | ✅ | ✅ | ✅ TOML | ✅ one binary |
+| nix-darwin | ✅ | ✅ | ✅ | ✅ | ❌ | Nix (steep) | ❌ |
+| Homebrew Bundle | ✅ | ❌ | ❌ | ❌ | ❌ | Brewfile | ✅ |
+| Ansible | ✅ | ✅ | ✅ | ✅ | ❌ | YAML (heavy) | ❌ |
 
 ---
 
