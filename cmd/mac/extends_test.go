@@ -284,7 +284,7 @@ func TestMergeConfigs_DefaultsDeepMerge(t *testing.T) {
 	}
 	override := &Config{
 		Defaults: map[string]map[string]any{
-			"com.apple.dock":    {"tilesize": int64(36)}, // override wins
+			"com.apple.dock":   {"tilesize": int64(36)}, // override wins
 			"com.apple.finder": {"ShowStatusBar": true},
 		},
 	}

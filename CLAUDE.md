@@ -68,7 +68,6 @@ GitHub Actions (`.github/workflows/release.yml`) builds cross-platform binaries 
 Use the `/browse` skill from gstack for all web browsing. Never use `mcp__claude-in-chrome__*` tools.
 
 Available gstack skills:
-- `/office-hours` — YC-style brainstorming and product idea exploration
 - `/plan-ceo-review` — Review a plan from a CEO/product perspective
 - `/plan-eng-review` — Review a plan from an engineering perspective
 - `/plan-design-review` — Designer's eye review of a plan

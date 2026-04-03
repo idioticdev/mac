@@ -15,7 +15,7 @@ func TestIsReadOnly(t *testing.T) {
 	}{
 		{"brew", []string{"list", "--formula", "-1"}, true},
 		{"brew", []string{"list", "--cask", "-1"}, true},
-		{"brew", []string{"tap"}, true},                // list taps — read-only
+		{"brew", []string{"tap"}, true},                   // list taps — read-only
 		{"brew", []string{"tap", "homebrew/core"}, false}, // add tap — mutating
 		{"brew", []string{"uninstall", "git"}, false},
 		{"brew", []string{"untap", "homebrew/core"}, false},
