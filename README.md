@@ -23,7 +23,7 @@ Are you on a fresh Mac?
 One command to go from factory-reset to your full setup:
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/idioticdev/mac/main/bootstrap.sh | bash
+curl -fsSL https://raw.githubusercontent.com/idioticdev/mac/main/install.sh | bash
 ```
 
 The bootstrap handles everything automatically:
@@ -44,7 +44,7 @@ mac apply      # apply when ready
 
 ```bash
 CONFIG_URL=https://raw.githubusercontent.com/you/dotfiles/main/mac.toml \
-  curl -fsSL https://raw.githubusercontent.com/idioticdev/mac/main/bootstrap.sh | bash
+  curl -fsSL https://raw.githubusercontent.com/idioticdev/mac/main/install.sh | bash
 ```
 
 ---
@@ -55,7 +55,7 @@ Your machine already has Homebrew and some packages. Generate a starter config f
 
 ```bash
 # Install mac
-curl -fsSL https://raw.githubusercontent.com/idioticdev/mac/main/bootstrap.sh | bash
+curl -fsSL https://raw.githubusercontent.com/idioticdev/mac/main/install.sh | bash
 
 # Generate mac.toml from current Homebrew state
 mac export > ~/.config/mac/mac.toml
@@ -82,7 +82,7 @@ You can run `mac` alongside nix-darwin. The key is telling `mac` which sections 
 
 ```bash
 # Install mac binary
-curl -fsSL https://raw.githubusercontent.com/idioticdev/mac/main/bootstrap.sh | bash
+curl -fsSL https://raw.githubusercontent.com/idioticdev/mac/main/install.sh | bash
 
 # Generate a starter config from your current Homebrew state
 mac export > ~/.config/mac/mac.toml

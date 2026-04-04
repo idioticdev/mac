@@ -61,7 +61,7 @@ Every operation checks current state before acting (e.g., `brew list` before ins
 
 ## Release
 
-GitHub Actions (`.github/workflows/release.yml`) builds cross-platform binaries on `v*` tags and publishes them as GitHub Releases. The `bootstrap.sh` one-liner fetches the latest binary — no Go required on the target machine.
+GitHub Actions (`.github/workflows/release.yml`) builds cross-platform binaries on `v*` tags and publishes them as GitHub Releases. The `install.sh` one-liner fetches the latest binary — no Go required on the target machine.
 
 ## gstack
 
