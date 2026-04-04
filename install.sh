@@ -3,11 +3,11 @@
 # install.sh — One-liner bootstrap for mac
 # ============================================================================
 # Usage (fresh Mac):
-#   curl -fsSL https://raw.githubusercontent.com/idioticdev/mac/main/install.sh | bash
+#   curl -fsSL https://mac.idiotic.dev/install.sh | bash
 #
 # Headless (skip config prompt):
 #   CONFIG_URL=https://raw.githubusercontent.com/you/dotfiles/main/mac.toml \
-#     curl -fsSL https://raw.githubusercontent.com/idioticdev/mac/main/install.sh | bash
+#     curl -fsSL https://mac.idiotic.dev/install.sh | bash
 #
 # What this does:
 #   1. Installs Xcode Command Line Tools (if missing)
