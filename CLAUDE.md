@@ -27,7 +27,7 @@ Uses Go 1.22+. `devbox.json` provides the dev shell (run `devbox shell`). Instal
 
 ## Architecture
 
-All source lives in `cmd/mac/`. The CLI exposes three commands: `apply`, `diff`, `validate`.
+All source lives in `cmd/mac/`. The CLI exposes: `apply`, `diff`, `validate`, `export`, `init`, `uninstall`, `shell-init`, and the internal `_track` command (called by the shell wrapper).
 
 ### Apply Execution Flow
 
@@ -39,17 +39,19 @@ All source lives in `cmd/mac/`. The CLI exposes three commands: `apply`, `diff`,
 
 | File | Responsibility |
 |------|---------------|
-| `main.go` | CLI setup; `apply`/`diff`/`validate`/`version` commands |
+| `main.go` | CLI entry point; command routing; shell path validation in `validate` |
 | `config.go` | Config struct + TOML unmarshaling |
 | `extends.go` | Config inheritance chain resolution with cycle detection |
 | `packages.go` | Homebrew (taps/formulae/casks) + MAS operations |
 | `defaults.go` | `defaults write` for macOS system preferences |
 | `dotfiles.go` | Git clone + GNU Stow integration |
 | `machine.go` | ComputerName & HostName |
-| `system.go` | PAM Touch ID, library unhiding, shell defaults, services |
+| `system.go` | PAM Touch ID, library unhiding, shell defaults, services; `isValidShellPath` |
 | `hooks.go` | Post-install shell command execution |
 | `exec.go` | Shell helpers: `Run`, `RunPassthrough`, `RunSudo` |
 | `ui.go` | Terminal UI (charmbracelet/lipgloss + charmbracelet/log) |
+| `add.go` | `shell-init` (prints brew wrapper) + `_track` (adds pkg to mac.toml) |
+| `toml_edit.go` | Atomic in-place TOML array append, preserving comments and formatting |
 
 ### Config System
 

@@ -176,6 +176,7 @@ Commands:
   export      Generate a mac.toml from current Homebrew state (stdout)
   init        Guided setup wizard — create your first mac.toml
   uninstall   Remove everything mac applied
+  shell-init  Print shell integration for brew auto-tracking
   version     Print version
 
 Options:
@@ -193,6 +194,7 @@ Examples:
   mac init                        # guided setup wizard
   mac validate                    # check config for errors
   mac uninstall --dry-run         # preview what uninstall would do
+  eval "$(mac shell-init)"        # add to ~/.zshrc to auto-track brew installs
 ```
 
 ---
@@ -339,6 +341,30 @@ Merge semantics: packages/taps/MAS apps union (deduplicated); defaults deep-merg
 post_install = [
     "softwareupdate --install-rosetta --agree-to-license 2>/dev/null || true",
 ]
+```
+
+---
+
+## Shell Integration — Auto-Track Brew Installs
+
+Add one line to your `~/.zshrc` or `~/.bashrc`:
+
+```bash
+eval "$(mac shell-init)"
+```
+
+After that, every `brew install` automatically records the package in your `mac.toml`. No more forgetting to add packages you installed on the fly.
+
+```bash
+brew install ripgrep   # installs AND adds "ripgrep" to mac.toml [packages].formulae
+brew install --cask arc  # installs AND adds "arc" to mac.toml [packages].casks
+```
+
+`mac init` will prompt you to add this automatically. To add it manually:
+
+```bash
+echo 'eval "$(mac shell-init)"' >> ~/.zshrc
+source ~/.zshrc
 ```
 
 ---
