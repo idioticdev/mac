@@ -75,11 +75,11 @@ func TestIsValidShellPath_Invalid(t *testing.T) {
 	cases := []string{
 		"",
 		"/",
-		"bin/zsh",           // relative
-		"/bin/zsh; evil",    // semicolon
-		"/bin/zsh' && cmd",  // single quote
-		"/bin/z$h",          // dollar sign
-		"/bin/z sh",         // space
+		"bin/zsh",             // relative
+		"/bin/zsh; evil",      // semicolon
+		"/bin/zsh' && cmd",    // single quote
+		"/bin/z$h",            // dollar sign
+		"/bin/z sh",           // space
 		"/bin/zsh\nmalicious", // newline
 	}
 	for _, c := range cases {

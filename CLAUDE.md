@@ -61,6 +61,26 @@ TOML with sections: `[machine]`, `[packages]`, `[mas]`, `[dotfiles]`, `[shell]`,
 
 Every operation checks current state before acting (e.g., `brew list` before install, `defaults read` before write). All operations must be safe to run repeatedly.
 
+## Git Workflow (OSS Branch Policy)
+
+All code changes must go through a pull request — never commit directly to `main`.
+
+**For every task that involves code changes:**
+
+1. Create a branch before writing any code:
+   ```bash
+   git checkout -b <type>/<short-description>   # e.g. fix/stow-path, feat/mas-upgrade
+   ```
+2. Make commits on the branch (follow Conventional Commits: `feat:`, `fix:`, `docs:`, etc.)
+3. Push and open a PR against `main`:
+   ```bash
+   git push -u origin <branch>
+   gh pr create --title "..." --body "..."
+   ```
+4. Do **not** push directly to `main` under any circumstances.
+
+Branch naming mirrors `CONTRIBUTING.md`: `fix/`, `feat/`, `docs/`, `refactor/`, `chore/`.
+
 ## Release
 
 GitHub Actions (`.github/workflows/release.yml`) builds cross-platform binaries on `v*` tags and publishes them as GitHub Releases. The `install.sh` one-liner (`curl -fsSL https://mac.idiotic.dev/install.sh | bash`) fetches the latest binary — no Go required on the target machine.

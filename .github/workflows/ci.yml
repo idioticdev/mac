@@ -16,10 +16,10 @@ jobs:
 
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v4.2.2
 
       - name: Set up Go
-        uses: actions/setup-go@v5
+        uses: actions/setup-go@v5.5.0
         with:
           go-version-file: go.mod
 
@@ -28,7 +28,7 @@ jobs:
 
       - name: Check formatting
         run: |
-          unformatted=$(gofmt -l ./...)
+          unformatted=$(gofmt -l $(find . -name '*.go' -not -path './.git/*'))
           if [ -n "$unformatted" ]; then
             echo "The following files are not formatted (run 'go fmt ./...'):"
             echo "$unformatted"
@@ -51,10 +51,10 @@ jobs:
 
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v4.2.2
 
       - name: Set up Go
-        uses: actions/setup-go@v5
+        uses: actions/setup-go@v5.5.0
         with:
           go-version-file: go.mod
 
