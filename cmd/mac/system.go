@@ -37,6 +37,22 @@ var keyNameToHID = map[string]uint64{
 	"f10": 0x700000043, "f11": 0x700000044, "f12": 0x700000045,
 }
 
+// isAppleSilicon reports whether this machine has Apple Silicon (arm64).
+func isAppleSilicon(r Runner) bool {
+	out, err := r.Run("sysctl", "-n", "hw.optional.arm64")
+	return err == nil && strings.TrimSpace(out) == "1"
+}
+
+// usesLeftFn reports whether any mapping references left_fn.
+func usesLeftFn(mappings []KeyRemapConfig) bool {
+	for _, m := range mappings {
+		if m.From == "left_fn" || m.To == "left_fn" {
+			return true
+		}
+	}
+	return false
+}
+
 // validateKeyRemapping returns error messages for any unknown key names.
 func validateKeyRemapping(cfg *Config) []string {
 	var errs []string
@@ -101,6 +117,10 @@ func buildKeyRemapPlist(hidutilJSON string) string {
 func applyKeyRemapping(cfg *Config, r Runner) {
 	if len(cfg.System.KeyRemapping) == 0 {
 		return
+	}
+
+	if usesLeftFn(cfg.System.KeyRemapping) && !isAppleSilicon(r) {
+		Warn("left_fn (Globe/Fn key) remapping is not supported on Intel Macs — hidutil ignores it; use Karabiner-Elements instead")
 	}
 
 	hidutilJSON, err := buildHidutilJSON(cfg.System.KeyRemapping)

@@ -122,6 +122,8 @@ func isReadOnly(name string, args []string) bool {
 		return len(args) > 0 && args[0] == "list"
 	case "defaults":
 		return len(args) > 0 && args[0] == "read"
+	case "sysctl":
+		return true
 	}
 	return false
 }

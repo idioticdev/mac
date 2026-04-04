@@ -17,6 +17,7 @@ Usage:
 Commands:
   apply       Apply the configuration (default)
   diff        Show what would change without applying
+  audit       Check running system for drift from config
   validate    Check the config file for errors
   export      Generate a mac.toml from current system state
   init        Interactive setup wizard — create your first mac.toml
@@ -46,6 +47,7 @@ Examples:
   mac init                       # guided setup wizard
   mac uninstall --dry-run        # preview what uninstall would do
   mac uninstall --yes            # uninstall without prompts
+  mac audit                      # check system for drift from config
   mac shell-init                 # print shell integration for brew tracking`)
 }
 
@@ -109,7 +111,7 @@ func main() {
 			yes = true
 		case "--dry-run":
 			dryRun = true
-		case "apply", "diff", "validate", "export", "init", "uninstall":
+		case "apply", "diff", "audit", "validate", "export", "init", "uninstall":
 			command = args[i]
 		default:
 			if args[i][0] != '-' {
@@ -150,6 +152,10 @@ func main() {
 		runValidate(cfg, configPath)
 	case "diff":
 		runDiff(cfg)
+	case "audit":
+		if !runAudit(cfg, DefaultRunner) {
+			os.Exit(1)
+		}
 	case "apply":
 		runApply(cfg)
 	case "uninstall":

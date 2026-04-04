@@ -212,6 +212,96 @@ func TestUninstallPamTID_AbsentSkipped(t *testing.T) {
 	}
 }
 
+// ── isAppleSilicon ───────────────────────────────────────────────────────────
+
+func TestIsAppleSilicon_True(t *testing.T) {
+	r := testutil.NewFakeRunner()
+	r.When("sysctl", "-n", "hw.optional.arm64").Returns("1", nil)
+	if !isAppleSilicon(r) {
+		t.Error("expected true when sysctl returns 1")
+	}
+}
+
+func TestIsAppleSilicon_False(t *testing.T) {
+	r := testutil.NewFakeRunner()
+	r.When("sysctl", "-n", "hw.optional.arm64").Returns("0", nil)
+	if isAppleSilicon(r) {
+		t.Error("expected false when sysctl returns 0")
+	}
+}
+
+func TestIsAppleSilicon_MissingKey(t *testing.T) {
+	r := testutil.NewFakeRunner()
+	// No sysctl response configured → FakeRunner returns "" with nil error.
+	if isAppleSilicon(r) {
+		t.Error("expected false when sysctl output is empty")
+	}
+}
+
+// ── usesLeftFn ───────────────────────────────────────────────────────────────
+
+func TestUsesLeftFn_Present(t *testing.T) {
+	mappings := []KeyRemapConfig{{From: "left_fn", To: "escape"}}
+	if !usesLeftFn(mappings) {
+		t.Error("expected true when left_fn is in From")
+	}
+}
+
+func TestUsesLeftFn_AsTo(t *testing.T) {
+	mappings := []KeyRemapConfig{{From: "caps_lock", To: "left_fn"}}
+	if !usesLeftFn(mappings) {
+		t.Error("expected true when left_fn is in To")
+	}
+}
+
+func TestUsesLeftFn_Absent(t *testing.T) {
+	mappings := []KeyRemapConfig{{From: "caps_lock", To: "escape"}}
+	if usesLeftFn(mappings) {
+		t.Error("expected false when left_fn is not used")
+	}
+}
+
+// ── applyKeyRemapping Intel warning ─────────────────────────────────────────
+
+func TestApplyKeyRemapping_LeftFnIntelStillProceed(t *testing.T) {
+	// On Intel (sysctl returns 0), left_fn mapping should still write the plist
+	// (hidutil ignores it silently — we warn but don't abort).
+	origDir := keyRemapPlistDir
+	keyRemapPlistDir = t.TempDir()
+	t.Cleanup(func() { keyRemapPlistDir = origDir })
+
+	r := testutil.NewFakeRunner()
+	r.When("sysctl", "-n", "hw.optional.arm64").Returns("0", nil)
+	cfg := &Config{System: SystemConfig{KeyRemapping: []KeyRemapConfig{
+		{From: "left_fn", To: "escape"},
+	}}}
+	applyKeyRemapping(cfg, r)
+
+	plistPath := filepath.Join(keyRemapPlistDir, "com.local.mac-keyremap.plist")
+	if !r.CalledWriteFile(plistPath) {
+		t.Errorf("expected plist to be written even on Intel (warn only), got calls: %v", r.Calls())
+	}
+}
+
+func TestApplyKeyRemapping_LeftFnAppleSiliconNoWarn(t *testing.T) {
+	// On Apple Silicon the mapping is valid — plist should be written without extra sysctl concern.
+	origDir := keyRemapPlistDir
+	keyRemapPlistDir = t.TempDir()
+	t.Cleanup(func() { keyRemapPlistDir = origDir })
+
+	r := testutil.NewFakeRunner()
+	r.When("sysctl", "-n", "hw.optional.arm64").Returns("1", nil)
+	cfg := &Config{System: SystemConfig{KeyRemapping: []KeyRemapConfig{
+		{From: "left_fn", To: "escape"},
+	}}}
+	applyKeyRemapping(cfg, r)
+
+	plistPath := filepath.Join(keyRemapPlistDir, "com.local.mac-keyremap.plist")
+	if !r.CalledWriteFile(plistPath) {
+		t.Errorf("expected plist to be written on Apple Silicon, got calls: %v", r.Calls())
+	}
+}
+
 // ── buildHidutilJSON ─────────────────────────────────────────────────────────
 
 func TestBuildHidutilJSON_SingleMapping(t *testing.T) {
