@@ -12,7 +12,6 @@
       "Bash(git branch *)",
       "Bash(git stash *)",
       "Bash(git add *)",
-      "Bash(git commit *)",
       "Bash(git fetch *)",
       "Bash(git checkout *)",
       "Bash(git switch *)",
@@ -33,7 +32,8 @@
       "Edit(**/.env.*)",
       "Edit(**/secrets/**)",
       "Edit(**/*.pem)",
-      "Edit(**/*.key)"
+      "Edit(**/*.key)",
+      "Bash(git commit *)"
     ],
     "hooks": {
       "PreToolUse": [

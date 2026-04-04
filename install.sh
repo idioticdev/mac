@@ -40,6 +40,7 @@ sudo -v < /dev/tty
 # Refresh the credential every 50s so it doesn't expire mid-run
 (while true; do sudo -n true 2>/dev/null; sleep 50; done) &
 _SUDO_KEEPALIVE_PID=$!
+disown "$_SUDO_KEEPALIVE_PID" 2>/dev/null || true
 
 # -------------------------------------------------------------------
 # CONFIGURATION
