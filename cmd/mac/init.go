@@ -158,6 +158,7 @@ func initFromURL(dest string) {
 		return
 	}
 	Ok("Config saved to " + dest)
+	promptShellIntegration()
 	printNextSteps(dest)
 }
 
@@ -171,6 +172,7 @@ func initFromBrew(r Runner, dest string) {
 	Ok("Config saved to " + dest)
 	Warn("Review the generated config — defaults and system sections are commented out.")
 	Warn("Uncomment and edit sections as needed, then run: mac apply")
+	promptShellIntegration()
 	printNextSteps(dest)
 }
 
@@ -228,6 +230,7 @@ post_install = [
 	}
 	Ok("Starter config written to " + dest)
 	Warn("Open the file and customise it before running: mac apply")
+	promptShellIntegration()
 	printNextSteps(dest)
 }
 
@@ -247,6 +250,66 @@ func printNextSteps(configPath string) {
 	fmt.Printf("    mac diff   -c %s   # preview changes\n", configPath)
 	fmt.Printf("    mac apply  -c %s   # apply config\n", configPath)
 	fmt.Println()
+}
+
+// shellRCPath returns the rc file path for the user's current shell,
+// or ("", false) if the shell is unsupported or undetectable.
+func shellRCPath() (string, bool) {
+	shell := os.Getenv("SHELL")
+	home := os.Getenv("HOME")
+	switch {
+	case strings.Contains(shell, "zsh"):
+		return filepath.Join(home, ".zshrc"), true
+	case strings.Contains(shell, "bash"):
+		return filepath.Join(home, ".bash_profile"), true
+	default:
+		return "", false
+	}
+}
+
+// promptShellIntegration asks the user whether to add the mac shell-init
+// eval line to their shell rc file. It is a no-op if already present.
+func promptShellIntegration() {
+	rcPath, ok := shellRCPath()
+	if !ok {
+		Info("Shell integration: add this line to your shell config manually:")
+		fmt.Println(`      eval "$(mac shell-init)"`)
+		return
+	}
+
+	const evalLine = `eval "$(mac shell-init)"`
+
+	// Check if already wired up.
+	existing, _ := os.ReadFile(rcPath)
+	if strings.Contains(string(existing), evalLine) {
+		Ok("Shell integration already in " + rcPath)
+		return
+	}
+
+	fmt.Printf("\n  Add brew tracking to %s? [Y/n] ", rcPath)
+	reader := bufio.NewReader(os.Stdin)
+	answer, _ := reader.ReadString('\n')
+	if answer = strings.TrimSpace(strings.ToLower(answer)); answer == "n" || answer == "no" {
+		Info("Skipped. To add later: echo 'eval \"$(mac shell-init)\"' >> " + rcPath)
+		return
+	}
+
+	block := "\n# mac shell integration — track brew installs in mac.toml\n" + evalLine + "\n"
+	f, err := os.OpenFile(rcPath, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0o644)
+	if err != nil {
+		Warn("Could not write to " + rcPath + ": " + err.Error())
+		Info("Add this line manually: " + evalLine)
+		return
+	}
+	defer f.Close()
+	if _, err := f.WriteString(block); err != nil {
+		Warn("Could not write to " + rcPath + ": " + err.Error())
+		Info("Add this line manually: " + evalLine)
+		return
+	}
+
+	Ok("Shell integration added to " + rcPath)
+	Info("Restart your terminal or run: source " + rcPath)
 }
 
 func downloadURL(url string) ([]byte, error) {
