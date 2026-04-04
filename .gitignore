@@ -3,6 +3,9 @@
 .dolt/
 *.db
 
+# gstack local artifacts (security reports, learnings, analytics)
+.gstack/
+
 # Claude Code agent worktrees
 .claude/worktrees/
 
