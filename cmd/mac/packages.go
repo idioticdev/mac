@@ -14,7 +14,7 @@ func EnsureHomebrew(r Runner) {
 	} else {
 		Info("Installing Homebrew …")
 		err := r.RunPassthrough("/bin/bash", "-c",
-			`"$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"`)
+			`eval "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"`)
 		if err != nil {
 			Fail("Homebrew installation failed: " + err.Error())
 			return
