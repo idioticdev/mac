@@ -1,0 +1,59 @@
+name: Feature Request
+description: Suggest a new feature or improvement.
+labels: ["enhancement"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Feature requests are most likely to be acted on when they fit `mac`'s philosophy: declarative, macOS-native, single-binary, zero-runtime dependencies.
+
+  - type: textarea
+    id: problem
+    attributes:
+      label: What problem does this solve?
+      description: Describe the situation where you hit this limitation. "I want X" is less useful than "When I do Y, I can't Z."
+    validations:
+      required: true
+
+  - type: textarea
+    id: solution
+    attributes:
+      label: Proposed solution
+      description: What would the config, CLI, or behavior look like?
+    validations:
+      required: true
+
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternatives you've considered
+      description: Other tools, workarounds, or approaches you've tried.
+
+  - type: dropdown
+    id: scope
+    attributes:
+      label: Which area does this affect?
+      options:
+        - packages (Homebrew)
+        - mas (Mac App Store)
+        - dotfiles
+        - defaults (macOS preferences)
+        - system (PAM, key remap, etc.)
+        - machine identity
+        - shell integration
+        - hooks
+        - CLI / UX
+        - extends / config inheritance
+        - other
+    validations:
+      required: true
+
+  - type: checkboxes
+    id: checklist
+    attributes:
+      label: Checklist
+      options:
+        - label: I searched existing issues and this hasn't been requested before.
+          required: true
+        - label: This fits within macOS configuration management (not a general-purpose tool request).
+          required: true

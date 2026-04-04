@@ -1,0 +1,9 @@
+blank_issues_enabled: false
+
+contact_links:
+  - name: Security Vulnerability
+    url: https://github.com/idiotic/mac/security/advisories/new
+    about: Report a security issue privately — do not use a public issue.
+  - name: Question / Discussion
+    url: https://github.com/idiotic/mac/discussions
+    about: Ask a question or discuss ideas before opening an issue.

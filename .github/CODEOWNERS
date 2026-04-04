@@ -1,0 +1,16 @@
+# CODEOWNERS
+#
+# These users are automatically requested for review when a PR touches the
+# matching paths. Update this file with the actual GitHub username(s).
+#
+# Docs: https://docs.github.com/en/repositories/managing-your-repositorys-settings-and-features/customizing-your-repository/about-code-owners
+
+# Default: all files require maintainer review
+* @idioticdev
+
+# Security-sensitive paths require explicit maintainer sign-off
+install.sh        @idioticdev
+cmd/mac/system.go @idioticdev
+cmd/mac/exec.go   @idioticdev
+cmd/mac/hooks.go  @idioticdev
+.github/          @idioticdev
