@@ -188,6 +188,11 @@ func runValidate(cfg *Config, path string) {
 	for _, msg := range validateKeyRemapping(cfg) {
 		Fail(msg)
 	}
+
+	if s := cfg.Shell.Default; s != "" && !isValidShellPath(s) {
+		Fail(fmt.Sprintf("Invalid shell.default %q: must be an absolute path using only [a-zA-Z0-9/_.-]", s))
+		os.Exit(1)
+	}
 }
 
 // runDiff previews all changes by running the full apply pipeline with a

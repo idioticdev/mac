@@ -5,6 +5,7 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 )
 
@@ -113,36 +114,27 @@ func TestResolveConfig_SelfReference(t *testing.T) {
 	}
 }
 
-func TestResolveConfig_URLExtends(t *testing.T) {
-	baseTOML := `
-[packages]
-formulae = ["curl", "wget"]
-`
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		w.Header().Set("Content-Type", "text/plain")
+func TestResolveConfig_HTTPURLRejected(t *testing.T) {
+	// http:// URLs are blocked — only https:// is permitted. A plaintext config
+	// fetch is a MITM vector since the tool executes hooks with sudo.
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		w.WriteHeader(http.StatusOK)
-		w.Write([]byte(baseTOML))
 	}))
 	defer srv.Close()
 
 	dir := t.TempDir()
-	childContent := "extends = [\"" + srv.URL + "/base.toml\"]\n[packages]\nformulae = [\"jq\"]\n"
+	childContent := "extends = [\"" + srv.URL + "/base.toml\"]\n"
 	childPath := filepath.Join(dir, "child.toml")
 	if err := os.WriteFile(childPath, []byte(childContent), 0o644); err != nil {
 		t.Fatal(err)
 	}
 
-	cfg, err := ResolveConfig(childPath)
-	if err != nil {
-		t.Fatalf("ResolveConfig with URL extends: %v", err)
+	_, err := ResolveConfig(childPath)
+	if err == nil {
+		t.Fatal("expected error for http:// extends URL, got nil")
 	}
-
-	wantFormulae := map[string]bool{"curl": true, "wget": true, "jq": true}
-	for _, f := range cfg.Packages.Formulae {
-		delete(wantFormulae, f)
-	}
-	if len(wantFormulae) != 0 {
-		t.Errorf("missing formulae from merged config: %v", wantFormulae)
+	if !strings.Contains(err.Error(), "must use https://") {
+		t.Errorf("expected https-required error, got: %v", err)
 	}
 }
 

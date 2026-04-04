@@ -51,7 +51,10 @@ func fetchConfig(source string) (*Config, error) {
 	var data []byte
 	var err error
 
-	if strings.HasPrefix(source, "http://") || strings.HasPrefix(source, "https://") {
+	if strings.HasPrefix(source, "http://") {
+		return nil, fmt.Errorf("extends URL must use https://, got: %s", source)
+	}
+	if strings.HasPrefix(source, "https://") {
 		resp, err := http.Get(source) //nolint:noctx
 		if err != nil {
 			return nil, fmt.Errorf("fetching %s: %w", source, err)

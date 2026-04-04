@@ -58,10 +58,14 @@ jobs:
         with:
           merge-multiple: true
 
+      - name: Generate checksums
+        run: sha256sum mac-darwin-arm64 mac-darwin-amd64 > checksums.txt
+
       - name: Create GitHub Release
-        uses: softprops/action-gh-release@v2
+        uses: softprops/action-gh-release@153bb8e04406b158c6c84fc1615b65b24149a1fe # v2
         with:
           files: |
             mac-darwin-arm64
             mac-darwin-amd64
+            checksums.txt
           generate_release_notes: true

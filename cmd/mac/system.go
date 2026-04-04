@@ -201,6 +201,11 @@ func applyShell(cfg *Config, r Runner) {
 		return
 	}
 
+	if !isValidShellPath(target) {
+		Fail(fmt.Sprintf("Invalid shell.default %q: must be an absolute path using only [a-zA-Z0-9/_.-]", target))
+		return
+	}
+
 	Banner("Default Shell")
 
 	currentShell := os.Getenv("SHELL")
@@ -212,7 +217,10 @@ func applyShell(cfg *Config, r Runner) {
 	shells, _ := os.ReadFile("/etc/shells")
 	if !strings.Contains(string(shells), target) {
 		Info("Adding " + target + " to /etc/shells …")
-		r.RunShell("echo '" + target + "' | sudo tee -a /etc/shells >/dev/null")
+		if err := appendShellEntry(r, string(shells), target); err != nil {
+			Fail("Could not add to /etc/shells: " + err.Error())
+			return
+		}
 	}
 
 	Info("Changing default shell to " + target + " …")
@@ -221,6 +229,46 @@ func applyShell(cfg *Config, r Runner) {
 	} else {
 		Ok("Default shell → " + target)
 	}
+}
+
+// isValidShellPath returns true when path is safe to use as a shell executable:
+// absolute and composed only of [a-zA-Z0-9/_.-].
+func isValidShellPath(path string) bool {
+	if len(path) < 2 || path[0] != '/' {
+		return false
+	}
+	for _, c := range path[1:] {
+		switch {
+		case c >= 'a' && c <= 'z':
+		case c >= 'A' && c <= 'Z':
+		case c >= '0' && c <= '9':
+		case c == '/' || c == '_' || c == '-' || c == '.':
+		default:
+			return false
+		}
+	}
+	return true
+}
+
+// appendShellEntry appends target to /etc/shells using sudo cp — no shell
+// interpolation, so the path cannot inject commands regardless of its content.
+func appendShellEntry(r Runner, existing, target string) error {
+	tmp, err := os.CreateTemp("", "mac-shells-*")
+	if err != nil {
+		return err
+	}
+	defer os.Remove(tmp.Name())
+
+	if _, err := tmp.WriteString(existing + target + "\n"); err != nil {
+		tmp.Close()
+		return err
+	}
+	if err := tmp.Close(); err != nil {
+		return err
+	}
+
+	_, err = r.RunSudo("cp", tmp.Name(), "/etc/shells")
+	return err
 }
 
 func applyPamTID(r Runner) {

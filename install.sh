@@ -120,17 +120,38 @@ if [[ -z "$TAG" ]]; then
 fi
 ok "Latest release: $TAG"
 
-# ---- Step 5: Download pre-built binary ------------------------------------
+# ---- Step 5: Download pre-built binary + checksums -----------------------
 BINARY_NAME="mac-darwin-${ARCH}"
 DOWNLOAD_URL="https://github.com/${GITHUB_REPO}/releases/download/${TAG}/${BINARY_NAME}"
+CHECKSUMS_URL="https://github.com/${GITHUB_REPO}/releases/download/${TAG}/checksums.txt"
 TMP_BIN="$(mktemp)"
+TMP_SUMS="$(mktemp)"
 
 info "Downloading ${BINARY_NAME} …"
 if ! curl -fsSL "$DOWNLOAD_URL" -o "$TMP_BIN"; then
-    rm -f "$TMP_BIN"
+    rm -f "$TMP_BIN" "$TMP_SUMS"
     fail "Download failed: $DOWNLOAD_URL"
 fi
 ok "Downloaded $BINARY_NAME"
+
+info "Verifying checksum …"
+if ! curl -fsSL "$CHECKSUMS_URL" -o "$TMP_SUMS"; then
+    rm -f "$TMP_BIN" "$TMP_SUMS"
+    fail "Could not download checksums: $CHECKSUMS_URL"
+fi
+# Verify: extract the expected hash for this binary and compare.
+EXPECTED="$(grep "${BINARY_NAME}$" "$TMP_SUMS" | awk '{print $1}')"
+if [[ -z "$EXPECTED" ]]; then
+    rm -f "$TMP_BIN" "$TMP_SUMS"
+    fail "Checksum for ${BINARY_NAME} not found in checksums.txt"
+fi
+ACTUAL="$(shasum -a 256 "$TMP_BIN" | awk '{print $1}')"
+if [[ "$ACTUAL" != "$EXPECTED" ]]; then
+    rm -f "$TMP_BIN" "$TMP_SUMS"
+    fail "Checksum mismatch for ${BINARY_NAME} (got ${ACTUAL}, expected ${EXPECTED})"
+fi
+rm -f "$TMP_SUMS"
+ok "Checksum verified"
 
 # ---- Step 6: Install binary -----------------------------------------------
 info "Installing to ${INSTALL_DIR}/mac …"

@@ -54,6 +54,68 @@ func TestApplyShell_EmptyTarget(t *testing.T) {
 	}
 }
 
+// ── isValidShellPath ─────────────────────────────────────────────────────────
+
+func TestIsValidShellPath_Valid(t *testing.T) {
+	cases := []string{
+		"/bin/zsh",
+		"/usr/local/bin/fish",
+		"/opt/homebrew/bin/bash",
+		"/usr/bin/zsh-5.9",
+		"/bin/sh",
+	}
+	for _, c := range cases {
+		if !isValidShellPath(c) {
+			t.Errorf("expected valid: %q", c)
+		}
+	}
+}
+
+func TestIsValidShellPath_Invalid(t *testing.T) {
+	cases := []string{
+		"",
+		"/",
+		"bin/zsh",           // relative
+		"/bin/zsh; evil",    // semicolon
+		"/bin/zsh' && cmd",  // single quote
+		"/bin/z$h",          // dollar sign
+		"/bin/z sh",         // space
+		"/bin/zsh\nmalicious", // newline
+	}
+	for _, c := range cases {
+		if isValidShellPath(c) {
+			t.Errorf("expected invalid: %q", c)
+		}
+	}
+}
+
+// ── applyShell injection guard ───────────────────────────────────────────────
+
+func TestApplyShell_InvalidPathRejected(t *testing.T) {
+	r := testutil.NewFakeRunner()
+	cfg := &Config{Shell: ShellConfig{Default: "/bin/zsh'; evil command; echo '"}}
+	applyShell(cfg, r)
+	// Should make no system calls — invalid path is rejected before any action.
+	for _, c := range r.Calls() {
+		if strings.Contains(c, "chsh") || strings.Contains(c, "tee") || strings.Contains(c, "sudo") {
+			t.Errorf("should not have made call %q for invalid shell path", c)
+		}
+	}
+}
+
+func TestApplyShell_NoRunShellCall(t *testing.T) {
+	// Regression: applyShell must never use RunShell for /etc/shells manipulation.
+	// Shell string interpolation of cfg.Shell.Default was the injection vector.
+	r := testutil.NewFakeRunner()
+	cfg := &Config{Shell: ShellConfig{Default: "/bin/zsh"}}
+	applyShell(cfg, r)
+	for _, c := range r.Calls() {
+		if strings.HasPrefix(c, "shell:") {
+			t.Errorf("applyShell must not use RunShell (injection risk), got: %q", c)
+		}
+	}
+}
+
 func TestApplySystem_ExpandsScreenshotsDir(t *testing.T) {
 	// ExpandHome in FakeRunner maps ~/foo → /home/testuser/foo.
 	// Since /home/testuser/Screenshots won't normally exist, MkdirAll creates it.
