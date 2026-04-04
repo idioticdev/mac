@@ -45,11 +45,36 @@ Examples:
   mac export -o ~/mac.toml       # save to file instead of stdout
   mac init                       # guided setup wizard
   mac uninstall --dry-run        # preview what uninstall would do
-  mac uninstall --yes            # uninstall without prompts`)
+  mac uninstall --yes            # uninstall without prompts
+  mac shell-init                 # print shell integration for brew tracking`)
 }
 
 func main() {
 	args := os.Args[1:]
+
+	// Handle internal / simple commands before the general flag parser.
+	if len(args) > 0 && args[0] == "shell-init" {
+		runShellInit()
+		return
+	}
+	if len(args) > 0 && args[0] == "_track" {
+		isCask := false
+		pkg := ""
+		for _, a := range args[1:] {
+			switch a {
+			case "--cask":
+				isCask = true
+			default:
+				if !strings.HasPrefix(a, "-") && pkg == "" {
+					pkg = stripVersion(a)
+				}
+			}
+		}
+		if pkg != "" {
+			runTrack(pkg, isCask)
+		}
+		return
+	}
 
 	command := "apply"
 	configFlag := ""
