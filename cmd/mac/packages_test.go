@@ -198,7 +198,7 @@ func TestEnsureHomebrew_AlreadyInstalled(t *testing.T) {
 	EnsureHomebrew(r)
 
 	if r.CalledWith("/bin/bash", "-c",
-		`$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)`) {
+		`"$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"`) {
 		t.Error("should not run homebrew install script when brew already present")
 	}
 	if !r.CalledWith("brew", "update", "--quiet") {
