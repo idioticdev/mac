@@ -1,5 +1,20 @@
 package main
 
+func uninstallMachine(cfg *Config) {
+	if cfg.Machine.ComputerName == "" && cfg.Machine.LocalHostname == "" {
+		return
+	}
+
+	Banner("Machine Identity")
+	Warn("Machine identity was set by mac apply — no automatic revert.")
+	if cfg.Machine.ComputerName != "" {
+		Warn("  ComputerName/HostName: run 'sudo scutil --set ComputerName <name>' to change")
+	}
+	if cfg.Machine.LocalHostname != "" {
+		Warn("  LocalHostName: run 'sudo scutil --set LocalHostName <name>' to change")
+	}
+}
+
 func applyMachine(cfg *Config, r Runner) {
 	if cfg.Machine.ComputerName == "" && cfg.Machine.LocalHostname == "" {
 		return

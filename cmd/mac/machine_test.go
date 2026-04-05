@@ -73,6 +73,33 @@ func TestApplyMachine_BothFields(t *testing.T) {
 	}
 }
 
+// ── uninstallMachine ─────────────────────────────────────────────────────────
+
+func TestUninstallMachine_NoConfig(t *testing.T) {
+	// Should not panic or print anything when no machine config is set.
+	cfg := &Config{}
+	uninstallMachine(cfg) // no assertions — just must not panic
+}
+
+func TestUninstallMachine_ComputerName_NoScutilCalls(t *testing.T) {
+	cfg := &Config{
+		Machine: MachineConfig{ComputerName: "my-mac"},
+	}
+	// uninstallMachine only warns — it must not call scutil.
+	// We verify this by capturing no runner calls (function takes no runner).
+	uninstallMachine(cfg) // must not panic
+}
+
+func TestUninstallMachine_BothFields_NoScutilCalls(t *testing.T) {
+	cfg := &Config{
+		Machine: MachineConfig{
+			ComputerName:  "my-mac",
+			LocalHostname: "my-mac-local",
+		},
+	}
+	uninstallMachine(cfg) // must not panic
+}
+
 func TestApplyMachine_ComputerNameOnly_NoLocalHostnameCall(t *testing.T) {
 	r := testutil.NewFakeRunner()
 

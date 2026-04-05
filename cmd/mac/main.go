@@ -336,11 +336,16 @@ func runUninstall(cfg *Config, yes, dryRun bool) {
 		}
 	}
 
-	anySystem := BoolVal(cfg.System.PamTID) || BoolVal(cfg.System.RevealLibrary) || cfg.Shell.Default != ""
+	anySystem := BoolVal(cfg.System.PamTID) || BoolVal(cfg.System.RevealLibrary) ||
+		cfg.Shell.Default != "" || len(cfg.System.KeyRemapping) > 0
 	if anySystem {
 		if yes || dryRun || Confirm("Revert system tweaks?") {
 			uninstallSystem(cfg, r)
 		}
+	}
+
+	if cfg.Machine.ComputerName != "" || cfg.Machine.LocalHostname != "" {
+		uninstallMachine(cfg)
 	}
 
 	Done()
