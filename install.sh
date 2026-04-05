@@ -165,13 +165,8 @@ ok "Installed: ${INSTALL_DIR}/mac  (${TAG})"
 printf "\n${BOLD}Almost there!${NC}\n\n"
 
 if [[ -n "${CONFIG_URL:-}" ]]; then
-    # Headless mode: CONFIG_URL provided via env
-    info "Fetching config from $CONFIG_URL …"
-    mkdir -p "$CONFIG_DIR"
-    if ! curl -fsSL "$CONFIG_URL" -o "$CONFIG_FILE"; then
-        fail "Could not download config from: $CONFIG_URL"
-    fi
-    ok "Config saved to $CONFIG_FILE"
+    # Headless mode: download config non-interactively via mac init --url
+    mac init --url "$CONFIG_URL" --output "$CONFIG_FILE"
 elif [[ -f "$CONFIG_FILE" ]]; then
     ok "Existing config found: $CONFIG_FILE"
 else

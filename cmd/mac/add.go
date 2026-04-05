@@ -47,12 +47,7 @@ brew() {
 // the shell wrapper emitted by runShellInit after a successful brew install.
 // Errors are printed to stderr and the process exits 0 so the shell wrapper's
 // `|| true` remains a reliable no-op for the user's terminal session.
-func runTrack(pkg string, isCask bool) {
-	configPath := os.Getenv("MAC_CONFIG")
-	if configPath == "" {
-		configPath = defaultConfigPath()
-	}
-
+func runTrack(configPath, pkg string, isCask bool) {
 	if _, err := os.Stat(configPath); os.IsNotExist(err) {
 		fmt.Fprintf(os.Stderr, "mac: config not found at %s — run: mac init\n", configPath)
 		return

@@ -24,32 +24,26 @@ func defaultConfigPath() string {
 //
 // Priority:
 //  1. Explicit -c / --config flag (caller passes non-empty override)
-//  2. MAC_CONFIG env var
-//  3. Existing file at the default path
-//  4. Interactive prompt → download → save to default path
+//  2. Existing file at the default path
+//  3. Interactive prompt → download → save to default path
 func resolveConfigPath(flagPath string) (string, error) {
 	// 1. Explicit flag
 	if flagPath != "" && flagPath != "mac.toml" {
 		return flagPath, nil
 	}
 
-	// 2. Env var
-	if env := os.Getenv("MAC_CONFIG"); env != "" {
-		return env, nil
-	}
-
-	// 3. Default path exists
+	// 2. Default path exists
 	def := defaultConfigPath()
 	if _, err := os.Stat(def); err == nil {
 		return def, nil
 	}
 
-	// 4. Fallback: local mac.toml in cwd (original behaviour)
+	// 3. Fallback: local mac.toml in cwd (original behaviour)
 	if _, err := os.Stat(flagPath); err == nil {
 		return flagPath, nil
 	}
 
-	// 5. Interactive first-run prompt (URL only — for full wizard use: mac init)
+	// 4. Interactive first-run prompt (URL only — for full wizard use: mac init)
 	return runInitPrompt(def)
 }
 
@@ -96,9 +90,31 @@ func runInitPrompt(dest string) (string, error) {
 //  1. Download from a URL
 //  2. Generate from current Homebrew state (mac export)
 //  3. Write a blank starter template
-func runInit(r Runner, outputPath string) {
+//
+// When url is non-empty the wizard is skipped and the config is downloaded
+// non-interactively. This is used by: mac init --url <url>
+func runInit(r Runner, outputPath, url string) {
 	if outputPath == "" {
 		outputPath = defaultConfigPath()
+	}
+
+	// Non-interactive: URL provided directly (e.g. from install.sh or CI).
+	if url != "" {
+		Banner("mac init — downloading config")
+		Info(fmt.Sprintf("Fetching config from %s …", url))
+		data, err := downloadURL(url)
+		if err != nil {
+			Fail(err.Error())
+			return
+		}
+		if err := writeConfig(outputPath, data); err != nil {
+			Fail(err.Error())
+			return
+		}
+		Ok("Config saved to " + outputPath)
+		promptShellIntegration()
+		printNextSteps(outputPath)
+		return
 	}
 
 	Banner("mac init — setup wizard")

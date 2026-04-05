@@ -27,14 +27,12 @@ Commands:
 Options:
   -c, --config <path>    Config file (default: ~/.config/mac/mac.toml)
   -o, --output <path>    Output path for export / init (default: stdout / config path)
+  --url <url>            Non-interactive URL download for mac init
   -h, --help             Show this help
 
 Uninstall options:
   --dry-run   Show what would be removed without making changes
   --yes, -y   Skip confirmation prompts
-
-Environment:
-  MAC_CONFIG   Override config path (same as -c)
 
 Examples:
   mac                            # apply config (prompts for URL on first run)
@@ -73,7 +71,7 @@ func main() {
 			}
 		}
 		if pkg != "" {
-			runTrack(pkg, isCask)
+			runTrack(defaultConfigPath(), pkg, isCask)
 		}
 		return
 	}
@@ -81,6 +79,7 @@ func main() {
 	command := "apply"
 	configFlag := ""
 	outputFlag := ""
+	urlFlag := ""
 	yes := false
 	dryRun := false
 
@@ -107,6 +106,13 @@ func main() {
 			}
 			i++
 			outputFlag = args[i]
+		case "--url":
+			if i+1 >= len(args) {
+				fmt.Fprintln(os.Stderr, "Error: --url requires a URL")
+				os.Exit(1)
+			}
+			i++
+			urlFlag = args[i]
 		case "-y", "--yes":
 			yes = true
 		case "--dry-run":
@@ -131,7 +137,7 @@ func main() {
 		return
 	}
 	if command == "init" {
-		runInit(DefaultRunner, outputFlag)
+		runInit(DefaultRunner, outputFlag, urlFlag)
 		return
 	}
 

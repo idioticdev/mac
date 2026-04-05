@@ -16,9 +16,8 @@ formulae = ["git"]
 `), 0644); err != nil {
 		t.Fatal(err)
 	}
-	t.Setenv("MAC_CONFIG", path)
 
-	runTrack("ripgrep", false)
+	runTrack(path, "ripgrep", false)
 
 	data, _ := os.ReadFile(path)
 	if !strings.Contains(string(data), `"ripgrep"`) {
@@ -35,9 +34,8 @@ casks = ["wezterm"]
 `), 0644); err != nil {
 		t.Fatal(err)
 	}
-	t.Setenv("MAC_CONFIG", path)
 
-	runTrack("arc", true)
+	runTrack(path, "arc", true)
 
 	data, _ := os.ReadFile(path)
 	if !strings.Contains(string(data), `"arc"`) {
@@ -55,9 +53,8 @@ formulae = ["git", "ripgrep"]
 	if err := os.WriteFile(path, []byte(original), 0644); err != nil {
 		t.Fatal(err)
 	}
-	t.Setenv("MAC_CONFIG", path)
 
-	runTrack("git", false)
+	runTrack(path, "git", false)
 
 	data, _ := os.ReadFile(path)
 	if string(data) != original {
@@ -67,9 +64,8 @@ formulae = ["git", "ripgrep"]
 
 // TestRunTrack_ConfigNotFound verifies graceful handling when mac.toml is absent.
 func TestRunTrack_ConfigNotFound(t *testing.T) {
-	t.Setenv("MAC_CONFIG", "/nonexistent/path/mac.toml")
 	// Should not panic; prints to stderr and returns.
-	runTrack("git", false)
+	runTrack("/nonexistent/path/mac.toml", "git", false)
 }
 
 // TestRunShellInit verifies the emitted shell function contains required parts.
