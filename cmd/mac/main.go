@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"os"
 	"strings"
+	"time"
 )
 
 // version is overridden at link time via -X main.version=<tag> (see justfile / release.yml).
@@ -234,6 +235,8 @@ func runDiff(cfg *Config) {
 func runApply(cfg *Config) {
 	Header()
 
+	versionCh := startVersionCheck(newHTTPReleaseClient())
+
 	Info("Requesting administrator privileges …")
 	if err := DefaultRunner.RunPassthrough("sudo", "-v"); err != nil {
 		Fail("Could not acquire sudo. Aborting.")
@@ -245,6 +248,14 @@ func runApply(cfg *Config) {
 	doApply(cfg, DefaultRunner, makeSkipSet(cfg))
 
 	Done()
+
+	select {
+	case latestTag, ok := <-versionCh:
+		if ok {
+			Info(fmt.Sprintf("New version available (%s). Run: mac upgrade", latestTag))
+		}
+	case <-time.After(3 * time.Second):
+	}
 }
 
 // doApply runs all apply operations via r, skipping sections listed in skip.

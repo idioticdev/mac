@@ -351,3 +351,53 @@ func TestVerifyChecksum_FilenameNotFound(t *testing.T) {
 		t.Errorf("error should mention not found, got: %v", err)
 	}
 }
+
+// ── startVersionCheck ─────────────────────────────────────────────────────────
+
+func TestStartVersionCheck_NewerAvailable(t *testing.T) {
+	version = "v1.0.0"
+	client := newFakeClient("v1.1.0")
+
+	ch := startVersionCheck(client)
+	tag, ok := <-ch
+	if !ok {
+		t.Fatal("expected a tag on the channel, channel was closed empty")
+	}
+	if tag != "v1.1.0" {
+		t.Errorf("expected v1.1.0, got %s", tag)
+	}
+}
+
+func TestStartVersionCheck_AlreadyUpToDate(t *testing.T) {
+	version = "v1.1.0"
+	client := newFakeClient("v1.1.0")
+
+	ch := startVersionCheck(client)
+	_, ok := <-ch
+	if ok {
+		t.Fatal("expected channel closed with no value when already up to date")
+	}
+}
+
+func TestStartVersionCheck_NetworkError(t *testing.T) {
+	version = "v1.0.0"
+	client := newFakeClient("")
+	client.latestErr = errors.New("network error")
+
+	ch := startVersionCheck(client)
+	_, ok := <-ch
+	if ok {
+		t.Fatal("expected channel closed with no value on network error")
+	}
+}
+
+func TestStartVersionCheck_DevBuild(t *testing.T) {
+	version = "v1.0.0-3-gabcdef-dirty"
+	client := newFakeClient("v1.1.0")
+
+	ch := startVersionCheck(client)
+	_, ok := <-ch
+	if ok {
+		t.Fatal("expected channel closed with no value for dev build")
+	}
+}

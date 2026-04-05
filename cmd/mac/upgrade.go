@@ -196,6 +196,33 @@ func runUpgrade(r Runner, client ReleaseClient, checkOnly bool) error {
 	return nil
 }
 
+// startVersionCheck begins a background check for a newer release and returns
+// a channel that receives the latest tag when the check completes. The channel
+// is closed with no value if the binary is up to date, is a dev build, or if
+// the check fails for any reason. Call with a select + time.After to enforce
+// a timeout.
+func startVersionCheck(client ReleaseClient) <-chan string {
+	ch := make(chan string, 1)
+	go func() {
+		defer close(ch)
+		latestTag, err := client.LatestRelease(githubRepo)
+		if err != nil {
+			return
+		}
+		current := version
+		if !strings.HasPrefix(current, "v") {
+			current = "v" + current
+		}
+		if !semver.IsValid(current) || semver.Prerelease(current) != "" {
+			return // dev/pre-release build — skip nudge
+		}
+		if semver.Compare(current, latestTag) < 0 {
+			ch <- latestTag
+		}
+	}()
+	return ch
+}
+
 // verifyChecksum checks that the sha256 of data matches the expected hash in
 // checksumsData (a file with lines of the form "<hash>  <filename>").
 func verifyChecksum(data []byte, filename string, checksumsData []byte) error {
