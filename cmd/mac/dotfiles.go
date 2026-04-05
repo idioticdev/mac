@@ -27,8 +27,8 @@ func applyDotfiles(cfg *Config, r Runner) {
 	} else {
 		ensureSSHForClone(cfg.Dotfiles.Repo, r)
 		Info("Cloning " + cfg.Dotfiles.Repo + " → " + dest)
-		if _, err := r.Run("git", "clone", cfg.Dotfiles.Repo, dest); err != nil {
-			Fail("Clone failed: " + err.Error())
+		if err := r.RunPassthrough("git", "clone", cfg.Dotfiles.Repo, dest); err != nil {
+			Fail("Clone failed — check git output above for details")
 			return
 		}
 		Ok("Cloned")
@@ -49,8 +49,8 @@ func applyDotfiles(cfg *Config, r Runner) {
 			}
 
 			Info("Stowing " + pkg + " …")
-			if _, err := r.Run("stow", "-d", dest, "-t", home, "--restow", pkg); err != nil {
-				Warn(pkg + " had conflicts: " + err.Error())
+			if err := r.RunPassthrough("stow", "-d", dest, "-t", home, "--restow", pkg); err != nil {
+				Warn(pkg + " had conflicts — check stow output above for details")
 			} else {
 				Ok(pkg)
 			}

@@ -171,10 +171,13 @@ mac [command] [options]
 
 Commands:
   apply       Apply the configuration (default)
-  diff        Preview all changes — safe, nothing is written
+  diff        Preview all changes — safe, nothing is written (exits 1 if changes exist)
+  audit       Check running system for drift from config
+  doctor      Check prerequisites and diagnose common issues
   validate    Check the config file for errors
   export      Generate a mac.toml from current Homebrew state (stdout)
   init        Guided setup wizard — create your first mac.toml
+  upgrade     Download and install the latest mac release
   uninstall   Remove everything mac applied
   shell-init  Print shell integration for brew auto-tracking
   version     Print version
@@ -192,10 +195,70 @@ Examples:
   mac export                      # print mac.toml from current state
   mac export -o ~/mac.toml        # save export to file (via redirect or -o)
   mac init                        # guided setup wizard
+  mac audit                       # check for untracked packages and drift
+  mac doctor                      # diagnose prerequisites before applying
   mac validate                    # check config for errors
+  mac upgrade                     # install latest release
   mac uninstall --dry-run         # preview what uninstall would do
   eval "$(mac shell-init)"        # add to ~/.zshrc to auto-track brew installs
 ```
+
+---
+
+## Keeping Your System in Sync
+
+### `mac diff` — preview changes before applying
+
+`mac diff` runs the full apply pipeline as a dry run. Nothing is written. Use it before every `mac apply` to see exactly what would change.
+
+```bash
+mac diff              # preview against your config
+mac diff -c ~/work.toml   # preview a different config
+```
+
+In CI, `mac diff` exits 1 if any changes would be applied, making it useful for drift detection:
+
+```bash
+mac diff && echo "system is up to date" || echo "config drift detected"
+```
+
+### `mac audit` — find untracked packages
+
+`mac audit` checks what's installed on your system against your config and reports anything not tracked:
+
+```bash
+mac audit
+```
+
+Example output:
+
+```
+▸ Homebrew Formulae
+  ! wget (installed, not in config)
+  ! httpie (installed, not in config)
+
+▸ Homebrew Casks
+  ✓ all 3 cask(s) tracked
+```
+
+Use this after a few weeks on a machine to find packages you installed manually and forgot to add to your config. Then either `mac audit` to add them or uninstall them.
+
+### `mac doctor` — diagnose issues before apply
+
+`mac doctor` checks that your machine is ready for `mac apply`:
+
+```bash
+mac doctor
+```
+
+It checks:
+- macOS version (13+ required)
+- Homebrew installed and healthy
+- SSH key configured (if your dotfiles repo uses `git@...`)
+- GNU Stow installed (if `dotfiles.method = "stow"`)
+- `mas` CLI installed (if `[mas]` section is non-empty)
+
+Run `mac doctor` first if `mac apply` is failing and you're not sure why.
 
 ---
 
@@ -402,6 +465,87 @@ Every operation checks current state before acting. Safe to re-run after any con
 - macOS 13+ (Sonoma+ recommended for `sudo_local` PAM support)
 - Internet connection for bootstrap and remote configs
 - Go 1.22+ only if building from source
+
+## Troubleshooting
+
+### `Clone failed — check git output above for details`
+
+This almost always means SSH keys aren't set up. If your dotfiles repo URL starts with `git@`:
+
+```bash
+# Generate a key if you don't have one
+ssh-keygen -t ed25519 -C "your@email.com"
+
+# Copy the public key and add it to GitHub
+cat ~/.ssh/id_ed25519.pub
+# → github.com/settings/keys
+
+# Test connectivity
+ssh -T git@github.com
+# Should print: "Hi username! You've successfully authenticated..."
+```
+
+### Stow conflicts when running `mac apply`
+
+Stow will fail if a file it wants to symlink already exists at the destination. Check the stow output printed above the warning, then:
+
+```bash
+# Back up or remove the conflicting file
+mv ~/.zshrc ~/.zshrc.bak
+
+# Re-run apply
+mac apply
+```
+
+### `mas` not found
+
+If your config has a `[mas]` section, `mas` must be installed:
+
+```bash
+brew install mas
+```
+
+Also make sure you're signed into the Mac App Store (open the App Store app and sign in).
+
+### Defaults not taking effect after `mac apply`
+
+Some macOS defaults require a logout or restart. Others require the affected app to be restarted. The most common ones:
+
+- **Finder** settings: `killall Finder` or log out
+- **Dock** settings: `killall Dock`
+- **Keyboard/input** settings: log out and back in
+
+`mac apply` restarts Finder, Dock, and SystemUIServer automatically. If a setting still isn't active, try logging out.
+
+### `brew install` fails with permission errors
+
+This usually means Homebrew's directories have wrong ownership. Run:
+
+```bash
+brew doctor
+```
+
+Follow any instructions it prints. The most common fix:
+
+```bash
+sudo chown -R $(whoami) $(brew --prefix)/
+```
+
+### Config not found on first run
+
+If you run `mac apply` with no config at `~/.config/mac/mac.toml`, it will prompt for a URL or redirect you to `mac init`. To set up interactively:
+
+```bash
+mac init    # guided wizard
+```
+
+To download an existing config directly:
+
+```bash
+mac init --url https://raw.githubusercontent.com/you/dotfiles/main/mac.toml
+```
+
+---
 
 ## License
 

@@ -63,8 +63,15 @@ func Warn(msg string) {
 	fmt.Fprintf(os.Stderr, "  %s %s\n", symbolWarn, msg)
 }
 
+// failRecorder is set during mac apply to collect failure messages for the
+// end-of-run summary. It is nil outside of apply runs.
+var failRecorder func(string)
+
 func Fail(msg string) {
 	fmt.Fprintf(os.Stderr, "  %s %s\n", symbolFail, msg)
+	if failRecorder != nil {
+		failRecorder(msg)
+	}
 }
 
 func Skip(msg string) {

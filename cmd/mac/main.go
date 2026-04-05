@@ -19,8 +19,9 @@ Usage:
 
 Commands:
   apply       Apply the configuration (default)
-  diff        Show what would change without applying
+  diff        Preview all changes — safe, no writes (exits 1 if changes exist)
   audit       Check running system for drift from config
+  doctor      Check prerequisites and diagnose common issues
   validate    Check the config file for errors
   export      Generate a mac.toml from current system state
   init        Interactive setup wizard — create your first mac.toml
@@ -45,6 +46,7 @@ Examples:
   mac diff                       # preview all changes (safe, no writes)
   mac diff -c company.toml       # preview a company config on your machine
   mac validate                   # check config for errors
+  mac doctor                     # check prerequisites and diagnose issues
   mac export                     # print mac.toml from current Homebrew state
   mac export -o ~/mac.toml       # save to file instead of stdout
   mac init                       # guided setup wizard
@@ -127,7 +129,7 @@ func main() {
 			dryRun = true
 		case "--check":
 			checkOnly = true
-		case "apply", "diff", "audit", "validate", "export", "init", "upgrade", "uninstall":
+		case "apply", "diff", "audit", "doctor", "validate", "export", "init", "upgrade", "uninstall":
 			command = args[i]
 		default:
 			if args[i][0] != '-' {
@@ -174,11 +176,15 @@ func main() {
 	case "validate":
 		runValidate(cfg, configPath)
 	case "diff":
-		runDiff(cfg)
+		if runDiff(cfg) {
+			os.Exit(1)
+		}
 	case "audit":
 		if !runAudit(cfg, DefaultRunner) {
 			os.Exit(1)
 		}
+	case "doctor":
+		runDoctor(cfg, DefaultRunner)
 	case "apply":
 		runApply(cfg)
 	case "uninstall":
@@ -226,16 +232,24 @@ func runValidate(cfg *Config, path string) {
 
 // runDiff previews all changes by running the full apply pipeline with a
 // DryRunRunner — no writes are made to the system.
-func runDiff(cfg *Config) {
+// Returns true if any changes were detected (useful for CI: exits 1 on drift).
+func runDiff(cfg *Config) bool {
 	Header()
 	Info("dry run — showing what would change")
-	doApply(cfg, NewDryRunRunner(DefaultRunner), makeSkipSet(cfg))
+	dryRunner := NewDryRunRunner(DefaultRunner)
+	doApply(cfg, dryRunner, makeSkipSet(cfg))
+	return dryRunner.Changed
 }
 
 func runApply(cfg *Config) {
 	Header()
 
 	versionCh := startVersionCheck(newHTTPReleaseClient())
+
+	// Collect failures during apply for the end-of-run summary.
+	var failures []string
+	failRecorder = func(msg string) { failures = append(failures, msg) }
+	defer func() { failRecorder = nil }()
 
 	Info("Requesting administrator privileges …")
 	if err := DefaultRunner.RunPassthrough("sudo", "-v"); err != nil {
@@ -247,7 +261,18 @@ func runApply(cfg *Config) {
 
 	doApply(cfg, DefaultRunner, makeSkipSet(cfg))
 
-	Done()
+	fmt.Fprintln(os.Stderr)
+	if len(failures) > 0 {
+		fmt.Fprintln(os.Stderr, doneStyle.Render("  ✓ mac complete"))
+		Warn("Some changes may require a logout or restart.")
+		fmt.Fprintln(os.Stderr)
+		Warn(fmt.Sprintf("%d failure(s) during apply — scroll up for details:", len(failures)))
+		for _, f := range failures {
+			fmt.Fprintf(os.Stderr, "    %s %s\n", symbolFail, f)
+		}
+	} else {
+		Done()
+	}
 
 	select {
 	case latestTag, ok := <-versionCh:

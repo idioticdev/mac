@@ -113,7 +113,7 @@ func runInit(r Runner, outputPath, url string) {
 		}
 		Ok("Config saved to " + outputPath)
 		promptShellIntegration()
-		printNextSteps(outputPath)
+		printNextSteps(r, outputPath)
 		return
 	}
 
@@ -146,7 +146,7 @@ func runInit(r Runner, outputPath, url string) {
 
 	switch choice {
 	case "1":
-		initFromURL(outputPath)
+		initFromURL(r, outputPath)
 	case "2":
 		initFromBrew(r, outputPath)
 	default:
@@ -154,7 +154,7 @@ func runInit(r Runner, outputPath, url string) {
 	}
 }
 
-func initFromURL(dest string) {
+func initFromURL(r Runner, dest string) {
 	fmt.Print("\n  Config URL: ")
 	reader := bufio.NewReader(os.Stdin)
 	line, _ := reader.ReadString('\n')
@@ -175,7 +175,7 @@ func initFromURL(dest string) {
 	}
 	Ok("Config saved to " + dest)
 	promptShellIntegration()
-	printNextSteps(dest)
+	printNextSteps(r, dest)
 }
 
 func initFromBrew(r Runner, dest string) {
@@ -200,7 +200,7 @@ func initFromBrew(r Runner, dest string) {
 
 	Warn("Uncomment and edit sections as needed, then run: mac apply")
 	promptShellIntegration()
-	printNextSteps(dest)
+	printNextSteps(r, dest)
 }
 
 func initBlank(r Runner, dest string) {
@@ -257,11 +257,8 @@ post_install = [
 		return
 	}
 	Ok("Starter config written to " + dest)
-	if df == nil {
-		Warn("Open the file and customise it before running: mac apply")
-	}
 	promptShellIntegration()
-	printNextSteps(dest)
+	printNextSteps(r, dest)
 }
 
 // dotfilesSetup holds values collected by promptDotfilesSetup.
@@ -358,11 +355,41 @@ func writeConfig(dest string, data []byte) error {
 	return nil
 }
 
-func printNextSteps(configPath string) {
+func printNextSteps(_ Runner, configPath string) {
+	cfg, err := ResolveConfig(configPath)
+	if err != nil {
+		fmt.Println()
+		fmt.Printf("  Next steps:\n")
+		fmt.Printf("    mac diff   -c %s\n", configPath)
+		fmt.Printf("    mac apply  -c %s\n", configPath)
+		fmt.Println()
+		return
+	}
+
 	fmt.Println()
-	fmt.Printf("  Next steps:\n")
-	fmt.Printf("    mac diff   -c %s   # preview changes\n", configPath)
-	fmt.Printf("    mac apply  -c %s   # apply config\n", configPath)
+	fmt.Printf("  Previewing changes …\n")
+	fmt.Println()
+	hasChanges := runDiff(cfg)
+	fmt.Println()
+
+	if hasChanges {
+		fi, err := os.Stdin.Stat()
+		isTTY := err == nil && (fi.Mode()&os.ModeCharDevice) != 0
+		if isTTY {
+			reader := bufio.NewReader(os.Stdin)
+			fmt.Print("  Apply now? [Y/n] ")
+			answer, _ := reader.ReadString('\n')
+			answer = strings.TrimSpace(strings.ToLower(answer))
+			if answer == "" || answer == "y" || answer == "yes" {
+				runApply(cfg)
+				fmt.Println()
+				return
+			}
+		}
+		fmt.Printf("  Run when ready: mac apply -c %s\n", configPath)
+	} else {
+		fmt.Println("  No changes to apply — system already matches config.")
+	}
 	fmt.Println()
 }
 

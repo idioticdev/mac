@@ -94,8 +94,13 @@ func Which(name string) bool {
 // logging what would have run. Read-only operations pass through to
 // the inner runner so that state-check calls (brew list, mas list, etc.)
 // still return real data for an accurate dry-run preview.
+//
+// Changed is set to true when at least one meaningful mutating operation
+// (package install, defaults write, dotfiles clone, etc.) was detected.
+// Infrastructure ops like "brew update" do not count.
 type DryRunRunner struct {
-	inner Runner
+	inner   Runner
+	Changed bool
 }
 
 // NewDryRunRunner returns a DryRunRunner backed by inner.
@@ -139,11 +144,33 @@ func (d *DryRunRunner) Run(name string, args ...string) (string, error) {
 	if isReadOnly(name, args) {
 		return d.inner.Run(name, args...)
 	}
+	// Infrastructure ops: show in diff output but don't count as config drift.
+	// - "brew update" is maintenance, not a package change.
+	// - "killall" restarts UI services; it's a side effect of applying changes,
+	//   not a change itself — and always runs unconditionally.
+	if isInfrastructureOp(name, args) {
+		Info(humanSummary(name, args))
+		return "", nil
+	}
+	d.Changed = true
 	Info(humanSummary(name, args))
 	return "", nil
 }
 
+// isInfrastructureOp returns true for commands that are always run as
+// side effects but don't represent meaningful config drift on their own.
+func isInfrastructureOp(name string, args []string) bool {
+	if name == "brew" && len(args) > 0 && args[0] == "update" {
+		return true
+	}
+	if name == "killall" {
+		return true
+	}
+	return false
+}
+
 func (d *DryRunRunner) RunSudo(name string, args ...string) (string, error) {
+	d.Changed = true
 	Info(humanSudoSummary(name, args))
 	return "", nil
 }
@@ -153,11 +180,13 @@ func (d *DryRunRunner) RunPassthrough(name string, args ...string) error {
 	if name == "sudo" && len(args) == 1 && args[0] == "-v" {
 		return nil
 	}
+	d.Changed = true
 	Info(humanSummary(name, args))
 	return nil
 }
 
 func (d *DryRunRunner) RunShell(command string) (string, error) {
+	d.Changed = true
 	display := command
 	if len(display) > 80 {
 		display = display[:77] + "…"
