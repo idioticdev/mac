@@ -9,34 +9,37 @@ import (
 	"github.com/charmbracelet/log"
 )
 
+// Adaptive hex colors — calibrated for both dark and light terminals.
 var (
-	colorBlue   = lipgloss.Color("69")
-	colorCyan   = lipgloss.Color("87")
-	colorGreen  = lipgloss.Color("76")
-	colorYellow = lipgloss.Color("220")
-	colorRed    = lipgloss.Color("196")
+	colorPrimary = lipgloss.AdaptiveColor{Dark: "#79B8FF", Light: "#0366D6"}
+	colorSuccess = lipgloss.AdaptiveColor{Dark: "#A8CC8C", Light: "#2E7D32"}
+	colorWarning = lipgloss.AdaptiveColor{Dark: "#E3B341", Light: "#855E00"}
+	colorError   = lipgloss.AdaptiveColor{Dark: "#F97583", Light: "#CB2431"}
+	colorMuted   = lipgloss.AdaptiveColor{Dark: "#6A737D", Light: "#959DA5"}
+)
 
+var (
 	bannerStyle = lipgloss.NewStyle().
 			Bold(true).
-			Foreground(colorBlue)
+			Foreground(colorPrimary)
 
-	symbolOk   = lipgloss.NewStyle().Foreground(colorGreen).Render("✓")
-	symbolInfo = lipgloss.NewStyle().Foreground(colorCyan).Render("→")
-	symbolWarn = lipgloss.NewStyle().Foreground(colorYellow).Render("⚠")
-	symbolFail = lipgloss.NewStyle().Foreground(colorRed).Render("✗")
-	symbolSkip = lipgloss.NewStyle().Foreground(colorYellow).Render("–")
+	symbolOk   = lipgloss.NewStyle().Foreground(colorSuccess).Render("✓")
+	symbolInfo = lipgloss.NewStyle().Foreground(colorPrimary).Render("→")
+	symbolWarn = lipgloss.NewStyle().Foreground(colorWarning).Render("!")
+	symbolFail = lipgloss.NewStyle().Foreground(colorError).Render("✗")
+	symbolSkip = lipgloss.NewStyle().Foreground(colorMuted).Render("·")
 
 	headerStyle = lipgloss.NewStyle().
 			Bold(true).
-			Foreground(colorBlue).
+			Foreground(colorPrimary).
 			BorderStyle(lipgloss.RoundedBorder()).
-			BorderForeground(colorBlue).
+			BorderForeground(colorMuted).
 			Padding(0, 2).
 			Align(lipgloss.Center)
 
 	doneStyle = lipgloss.NewStyle().
 			Bold(true).
-			Foreground(colorGreen)
+			Foreground(colorSuccess)
 
 	logger = log.NewWithOptions(os.Stderr, log.Options{
 		ReportTimestamp: false,
@@ -69,16 +72,15 @@ func Skip(msg string) {
 }
 
 func Header() {
-	title := "mac — v1.0.0\nDeclarative macOS Configuration"
 	fmt.Fprintln(os.Stderr)
-	fmt.Fprintln(os.Stderr, headerStyle.Render(title))
+	fmt.Fprintln(os.Stderr, headerStyle.Render("mac · declarative macOS"))
 	fmt.Fprintln(os.Stderr)
 }
 
 func Done() {
 	fmt.Fprintln(os.Stderr)
-	fmt.Fprintln(os.Stderr, doneStyle.Render("✅ mac complete!"))
-	Warn("Some changes may require a logout/restart to take full effect.")
+	fmt.Fprintln(os.Stderr, doneStyle.Render("  ✓ mac complete"))
+	Warn("Some changes may require a logout or restart.")
 }
 
 func Logger() *log.Logger {
