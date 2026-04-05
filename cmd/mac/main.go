@@ -6,7 +6,9 @@ import (
 	"strings"
 )
 
-const version = "1.0.0"
+// version is overridden at link time via -X main.version=<tag> (see justfile / release.yml).
+// Must be a var (not const) for ldflags injection to work.
+var version = "v1.0.0"
 
 func usage() {
 	fmt.Println(`mac — Declarative macOS Configuration
@@ -21,6 +23,7 @@ Commands:
   validate    Check the config file for errors
   export      Generate a mac.toml from current system state
   init        Interactive setup wizard — create your first mac.toml
+  upgrade     Download and install the latest mac release
   uninstall   Remove everything mac applied
   version     Print version
 
@@ -28,6 +31,7 @@ Options:
   -c, --config <path>    Config file (default: ~/.config/mac/mac.toml)
   -o, --output <path>    Output path for export / init (default: stdout / config path)
   --url <url>            Non-interactive URL download for mac init
+  --check                Check for available upgrade without installing
   -h, --help             Show this help
 
 Uninstall options:
@@ -43,6 +47,8 @@ Examples:
   mac export                     # print mac.toml from current Homebrew state
   mac export -o ~/mac.toml       # save to file instead of stdout
   mac init                       # guided setup wizard
+  mac upgrade                    # install latest release
+  mac upgrade --check            # check for updates without installing
   mac uninstall --dry-run        # preview what uninstall would do
   mac uninstall --yes            # uninstall without prompts
   mac audit                      # check system for drift from config
@@ -82,6 +88,7 @@ func main() {
 	urlFlag := ""
 	yes := false
 	dryRun := false
+	checkOnly := false
 
 	i := 0
 	for i < len(args) {
@@ -90,7 +97,7 @@ func main() {
 			usage()
 			os.Exit(0)
 		case "version", "--version":
-			fmt.Println("mac v" + version)
+			fmt.Println("mac " + version)
 			os.Exit(0)
 		case "-c", "--config":
 			if i+1 >= len(args) {
@@ -117,7 +124,9 @@ func main() {
 			yes = true
 		case "--dry-run":
 			dryRun = true
-		case "apply", "diff", "audit", "validate", "export", "init", "uninstall":
+		case "--check":
+			checkOnly = true
+		case "apply", "diff", "audit", "validate", "export", "init", "upgrade", "uninstall":
 			command = args[i]
 		default:
 			if args[i][0] != '-' {
@@ -131,7 +140,14 @@ func main() {
 		i++
 	}
 
-	// export and init don't need a config file to load.
+	// upgrade, export, and init don't need a config file to load.
+	if command == "upgrade" {
+		if err := runUpgrade(DefaultRunner, newHTTPReleaseClient(), checkOnly); err != nil {
+			Fail(err.Error())
+			os.Exit(1)
+		}
+		return
+	}
 	if command == "export" {
 		runExport(DefaultRunner)
 		return
