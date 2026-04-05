@@ -150,7 +150,7 @@ func runInit(r Runner, outputPath, url string) {
 	case "2":
 		initFromBrew(r, outputPath)
 	default:
-		initBlank(outputPath)
+		initBlank(r, outputPath)
 	}
 }
 
@@ -179,6 +179,8 @@ func initFromURL(dest string) {
 }
 
 func initFromBrew(r Runner, dest string) {
+	reader := bufio.NewReader(os.Stdin)
+
 	Info("Reading current Homebrew state …")
 	toml := generateExportTOML(r)
 	if err := writeConfig(dest, []byte(toml)); err != nil {
@@ -187,20 +189,35 @@ func initFromBrew(r Runner, dest string) {
 	}
 	Ok("Config saved to " + dest)
 	Warn("Review the generated config — defaults and system sections are commented out.")
+
+	if df := promptDotfilesSetup(r, reader); df != nil {
+		if err := appendDotfilesToConfig(dest, df); err != nil {
+			Warn("Could not append dotfiles section: " + err.Error())
+		} else {
+			Ok("Dotfiles section added to config")
+		}
+	}
+
 	Warn("Uncomment and edit sections as needed, then run: mac apply")
 	promptShellIntegration()
 	printNextSteps(dest)
 }
 
-func initBlank(dest string) {
-	computerName, _ := DefaultRunner.Run("scutil", "--get", "ComputerName")
-	localHostname, _ := DefaultRunner.Run("scutil", "--get", "LocalHostName")
+func initBlank(r Runner, dest string) {
+	reader := bufio.NewReader(os.Stdin)
+
+	computerName, _ := r.Run("scutil", "--get", "ComputerName")
+	localHostname, _ := r.Run("scutil", "--get", "LocalHostName")
 	if computerName == "" {
-		computerName, _ = DefaultRunner.Run("hostname", "-s")
+		computerName, _ = r.Run("hostname", "-s")
 	}
 	if localHostname == "" {
 		localHostname = computerName
 	}
+
+	df := promptDotfilesSetup(r, reader)
+
+	dotfilesSection := buildDotfilesSection(df)
 
 	content := fmt.Sprintf(`# ============================================================================
 # mac.toml — starter config
@@ -225,12 +242,7 @@ casks = [
     # "1password",
 ]
 
-# [dotfiles]
-# repo          = "git@github.com:you/dotfiles.git"
-# dest          = "~/.dotfiles"
-# method        = "stow"
-# stow_packages = ["zsh", "git"]
-
+%s
 [system]
 pam_tid = true   # Enable Touch ID for sudo
 
@@ -238,16 +250,102 @@ pam_tid = true   # Enable Touch ID for sudo
 post_install = [
     "softwareupdate --install-rosetta --agree-to-license 2>/dev/null || true",
 ]
-`, computerName, localHostname)
+`, computerName, localHostname, dotfilesSection)
 
 	if err := writeConfig(dest, []byte(content)); err != nil {
 		Fail(err.Error())
 		return
 	}
 	Ok("Starter config written to " + dest)
-	Warn("Open the file and customise it before running: mac apply")
+	if df == nil {
+		Warn("Open the file and customise it before running: mac apply")
+	}
 	promptShellIntegration()
 	printNextSteps(dest)
+}
+
+// dotfilesSetup holds values collected by promptDotfilesSetup.
+type dotfilesSetup struct {
+	repo     string
+	dest     string
+	stowPkgs []string
+}
+
+// promptDotfilesSetup asks whether the user has a dotfiles repo and collects
+// the URL, destination, and stow packages. It runs SSH setup inline so that
+// the first mac apply can clone without interruption. Returns nil if skipped.
+func promptDotfilesSetup(r Runner, reader *bufio.Reader) *dotfilesSetup {
+	fmt.Print("\n  Do you have a dotfiles repo? [y/N] ")
+	ans, _ := reader.ReadString('\n')
+	if strings.TrimSpace(strings.ToLower(ans)) != "y" {
+		return nil
+	}
+
+	fmt.Print("  Repo URL (e.g. git@github.com:you/dotfiles.git): ")
+	repoLine, _ := reader.ReadString('\n')
+	repo := strings.TrimSpace(repoLine)
+	if repo == "" {
+		Warn("No repo URL provided — skipping dotfiles setup")
+		return nil
+	}
+
+	fmt.Print("  Destination [~/.dotfiles]: ")
+	destLine, _ := reader.ReadString('\n')
+	dest := strings.TrimSpace(destLine)
+	if dest == "" {
+		dest = "~/.dotfiles"
+	}
+
+	fmt.Print("  Stow packages (comma-separated, or ENTER to skip): ")
+	pkgsLine, _ := reader.ReadString('\n')
+	var stowPkgs []string
+	for _, p := range strings.Split(strings.TrimSpace(pkgsLine), ",") {
+		if p := strings.TrimSpace(p); p != "" {
+			stowPkgs = append(stowPkgs, p)
+		}
+	}
+
+	ensureSSHForClone(repo, r)
+
+	return &dotfilesSetup{repo: repo, dest: dest, stowPkgs: stowPkgs}
+}
+
+// buildDotfilesSection returns the TOML dotfiles section for initBlank.
+// Returns a commented-out placeholder when df is nil.
+func buildDotfilesSection(df *dotfilesSetup) string {
+	if df == nil {
+		return `# [dotfiles]
+# repo          = "git@github.com:you/dotfiles.git"
+# dest          = "~/.dotfiles"
+# method        = "stow"
+# stow_packages = ["zsh", "git"]
+`
+	}
+
+	var sb strings.Builder
+	sb.WriteString("[dotfiles]\n")
+	fmt.Fprintf(&sb, "repo   = %q\n", df.repo)
+	fmt.Fprintf(&sb, "dest   = %q\n", df.dest)
+	sb.WriteString(`method = "stow"` + "\n")
+	if len(df.stowPkgs) > 0 {
+		quoted := make([]string, len(df.stowPkgs))
+		for i, p := range df.stowPkgs {
+			quoted[i] = fmt.Sprintf("%q", p)
+		}
+		sb.WriteString("stow_packages = [" + strings.Join(quoted, ", ") + "]\n")
+	}
+	return sb.String()
+}
+
+// appendDotfilesToConfig appends a [dotfiles] section to an existing TOML file.
+func appendDotfilesToConfig(configPath string, df *dotfilesSetup) error {
+	f, err := os.OpenFile(configPath, os.O_APPEND|os.O_WRONLY, 0o644)
+	if err != nil {
+		return err
+	}
+	defer f.Close()
+	_, err = fmt.Fprintf(f, "\n%s", buildDotfilesSection(df))
+	return err
 }
 
 func writeConfig(dest string, data []byte) error {
