@@ -25,6 +25,7 @@ func applyDotfiles(cfg *Config, r Runner) {
 			Warn("Pull failed (dirty tree?)")
 		}
 	} else {
+		ensureSSHForClone(cfg.Dotfiles.Repo, r)
 		Info("Cloning " + cfg.Dotfiles.Repo + " → " + dest)
 		if _, err := r.Run("git", "clone", cfg.Dotfiles.Repo, dest); err != nil {
 			Fail("Clone failed: " + err.Error())

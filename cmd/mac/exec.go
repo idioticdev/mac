@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
+	"slices"
 	"strings"
 )
 
@@ -124,6 +125,12 @@ func isReadOnly(name string, args []string) bool {
 		return len(args) > 0 && args[0] == "read"
 	case "sysctl":
 		return true
+	case "ssh":
+		// ssh -T is a connectivity test; batch-mode flags are read-only.
+		return slices.Contains(args, "-T")
+	case "ssh-keygen":
+		// ssh-keygen -l lists/validates a key without modifying it.
+		return slices.Contains(args, "-l")
 	}
 	return false
 }
