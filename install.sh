@@ -167,22 +167,11 @@ printf "\n${BOLD}Almost there!${NC}\n\n"
 if [[ -n "${CONFIG_URL:-}" ]]; then
     # Headless mode: download config non-interactively via mac init --url
     mac init --url "$CONFIG_URL" --output "$CONFIG_FILE"
-elif [[ -f "$CONFIG_FILE" ]]; then
-    ok "Existing config found: $CONFIG_FILE"
 else
-    # No config found — run the guided setup wizard.
+    # Run the guided setup wizard — handles both new and existing configs.
+    # mac init asks "Overwrite?" when a config already exists, then shows
+    # a diff and offers to apply, so no separate apply step is needed here.
     mac init --output "$CONFIG_FILE"
-fi
-
-# ---- Step 8: Apply (if config available) ----------------------------------
-if [[ -f "$CONFIG_FILE" ]]; then
-    echo ""
-    read -rp "  Run mac apply now? [Y/n] " answer
-    answer=${answer:-Y}
-    if [[ "$answer" =~ ^[Yy]$ ]]; then
-        echo ""
-        mac apply -c "$CONFIG_FILE"
-    fi
 fi
 
 printf "\n${BOLD}${GREEN}Done!${NC}\n\n"

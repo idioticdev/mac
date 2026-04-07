@@ -76,6 +76,35 @@ func TestRunInit_URL_DownloadFails(t *testing.T) {
 	}
 }
 
+// TestRunInit_ExistingConfig_PreservesFileOnDecline is a regression test for the
+// "used computer" bug: when a config already exists and the user declines to
+// overwrite it, the config must not be modified.
+func TestRunInit_ExistingConfig_PreservesFileOnDecline(t *testing.T) {
+	const original = "[packages]\nformulae = [\"git\"]\n"
+	dir := t.TempDir()
+	dest := filepath.Join(dir, "mac.toml")
+	if err := os.WriteFile(dest, []byte(original), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	oldStdin := os.Stdin
+	pr, pw, _ := os.Pipe()
+	os.Stdin = pr
+	pw.WriteString("n\n")
+	pw.Close()
+	defer func() { os.Stdin = oldStdin }()
+
+	runInit(testutil.NewFakeRunner(), dest, "")
+
+	data, err := os.ReadFile(dest)
+	if err != nil {
+		t.Fatalf("config file missing after runInit: %v", err)
+	}
+	if string(data) != original {
+		t.Errorf("config was modified when user declined overwrite\ngot:  %q\nwant: %q", string(data), original)
+	}
+}
+
 // ── promptDotfilesSetup ───────────────────────────────────────────────────────
 
 func fakeReader(input string) *bufio.Reader {
