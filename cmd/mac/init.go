@@ -126,7 +126,8 @@ func runInit(r Runner, outputPath, url string) {
 		reader := bufio.NewReader(os.Stdin)
 		line, _ := reader.ReadString('\n')
 		if strings.TrimSpace(strings.ToLower(line)) != "y" {
-			Ok("Keeping existing config. Run: mac apply")
+			Ok("Keeping existing config.")
+			printNextSteps(r, outputPath)
 			return
 		}
 	}
