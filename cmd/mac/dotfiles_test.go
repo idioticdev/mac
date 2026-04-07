@@ -8,6 +8,181 @@ import (
 	"github.com/youruser/mac/cmd/mac/testutil"
 )
 
+// ── checkStowConflicts ────────────────────────────────────────────────────
+
+func TestCheckStowConflicts_NoTargets(t *testing.T) {
+	dir := t.TempDir()
+	pkgDir := filepath.Join(dir, "pkg")
+	targetDir := filepath.Join(dir, "home")
+	if err := os.MkdirAll(pkgDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(pkgDir, ".zshrc"), []byte("# zsh"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	// targetDir exists but has no files.
+	if err := os.MkdirAll(targetDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+
+	conflicts, err := checkStowConflicts(pkgDir, targetDir)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(conflicts) != 0 {
+		t.Errorf("expected no conflicts, got %v", conflicts)
+	}
+}
+
+func TestCheckStowConflicts_RegularFileConflict(t *testing.T) {
+	dir := t.TempDir()
+	pkgDir := filepath.Join(dir, "pkg")
+	targetDir := filepath.Join(dir, "home")
+	if err := os.MkdirAll(pkgDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.MkdirAll(targetDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(pkgDir, ".zshrc"), []byte("# pkg"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	// A regular file at the target — this is a conflict.
+	if err := os.WriteFile(filepath.Join(targetDir, ".zshrc"), []byte("# existing"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	conflicts, err := checkStowConflicts(pkgDir, targetDir)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(conflicts) != 1 || conflicts[0] != filepath.Join(targetDir, ".zshrc") {
+		t.Errorf("expected conflict on .zshrc, got %v", conflicts)
+	}
+}
+
+func TestCheckStowConflicts_SymlinkNotConflict(t *testing.T) {
+	dir := t.TempDir()
+	pkgDir := filepath.Join(dir, "pkg")
+	targetDir := filepath.Join(dir, "home")
+	if err := os.MkdirAll(pkgDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.MkdirAll(targetDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	pkgFile := filepath.Join(pkgDir, ".zshrc")
+	if err := os.WriteFile(pkgFile, []byte("# pkg"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	// A symlink at the target — already stowed, not a conflict.
+	if err := os.Symlink(pkgFile, filepath.Join(targetDir, ".zshrc")); err != nil {
+		t.Fatal(err)
+	}
+
+	conflicts, err := checkStowConflicts(pkgDir, targetDir)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(conflicts) != 0 {
+		t.Errorf("expected no conflicts for symlink target, got %v", conflicts)
+	}
+}
+
+func TestCheckStowConflicts_DirectoryNotConflict(t *testing.T) {
+	dir := t.TempDir()
+	pkgDir := filepath.Join(dir, "pkg")
+	targetDir := filepath.Join(dir, "home")
+	// pkg has .config/nvim/init.lua; home has .config/ as a real directory.
+	if err := os.MkdirAll(filepath.Join(pkgDir, ".config", "nvim"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(pkgDir, ".config", "nvim", "init.lua"), []byte("-- nvim"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	// Real directory at home/.config/ — stow unfolds this, not a conflict.
+	if err := os.MkdirAll(filepath.Join(targetDir, ".config"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+
+	conflicts, err := checkStowConflicts(pkgDir, targetDir)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(conflicts) != 0 {
+		t.Errorf("expected no conflicts when only dirs overlap, got %v", conflicts)
+	}
+}
+
+func TestCheckStowConflicts_NestedFileConflict(t *testing.T) {
+	dir := t.TempDir()
+	pkgDir := filepath.Join(dir, "pkg")
+	targetDir := filepath.Join(dir, "home")
+	if err := os.MkdirAll(filepath.Join(pkgDir, ".config", "nvim"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(pkgDir, ".config", "nvim", "init.lua"), []byte("-- pkg"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	// Regular file at the nested target path — this is a conflict.
+	if err := os.MkdirAll(filepath.Join(targetDir, ".config", "nvim"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(targetDir, ".config", "nvim", "init.lua"), []byte("-- existing"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	conflicts, err := checkStowConflicts(pkgDir, targetDir)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	want := filepath.Join(targetDir, ".config", "nvim", "init.lua")
+	if len(conflicts) != 1 || conflicts[0] != want {
+		t.Errorf("expected nested conflict at %s, got %v", want, conflicts)
+	}
+}
+
+// ── applyDotfiles (conflict integration) ─────────────────────────────────
+
+func TestApplyDotfiles_SkipsStowWhenConflictsExist(t *testing.T) {
+	dir := t.TempDir()
+	dest := filepath.Join(dir, "dotfiles")
+	home := filepath.Join(dir, "home")
+
+	// Create pkg dir with a file.
+	if err := os.MkdirAll(filepath.Join(dest, "zsh"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dest, "zsh", ".zshrc"), []byte("# pkg"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	// Conflicting regular file in the fake home.
+	if err := os.MkdirAll(home, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(home, ".zshrc"), []byte("# existing"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	r := testutil.NewFakeRunner().WhenWhich("stow", true).SetHome(home)
+	r.When("git", "-C", dest, "pull", "--ff-only").Returns("", nil)
+
+	cfg := &Config{
+		Dotfiles: DotfilesConfig{
+			Repo:         "https://github.com/user/dotfiles",
+			Dest:         dest,
+			Method:       "stow",
+			StowPackages: []string{"zsh"},
+		},
+	}
+
+	applyDotfiles(cfg, r)
+
+	if r.CalledWith("stow", "-d", dest, "-t", home, "--restow", "zsh") {
+		t.Error("stow should not be called when conflicts exist")
+	}
+}
+
 func TestApplyDotfiles_NoRepo(t *testing.T) {
 	r := testutil.NewFakeRunner()
 	cfg := &Config{}
@@ -96,7 +271,7 @@ func TestApplyDotfiles_StowMethod(t *testing.T) {
 
 	applyDotfiles(cfg, r)
 
-	home, _ := os.UserHomeDir()
+	home := "/home/testuser"
 	for _, pkg := range []string{"zsh", "git"} {
 		if !r.CalledWith("stow", "-d", dest, "-t", home, "--restow", pkg) {
 			t.Errorf("expected stow call for package %q", pkg)
@@ -155,7 +330,7 @@ func TestApplyDotfiles_StowSkipsMissingPackageDir(t *testing.T) {
 
 	applyDotfiles(cfg, r)
 
-	home, _ := os.UserHomeDir()
+	home := "/home/testuser"
 	if r.CalledWith("stow", "-d", dest, "-t", home, "--restow", "nvim") {
 		t.Error("stow should not be called for a missing package directory")
 	}
@@ -201,7 +376,7 @@ func TestApplyDotfiles_CloneFailureAbortsStow(t *testing.T) {
 
 	applyDotfiles(cfg, r)
 
-	home, _ := os.UserHomeDir()
+	home := "/home/testuser"
 	if r.CalledWith("stow", "-d", dest, "-t", home, "--restow", "zsh") {
 		t.Error("stow should not run after clone failure")
 	}
@@ -238,7 +413,7 @@ func TestUninstallDotfiles_StowUnstowsPackages(t *testing.T) {
 
 	uninstallDotfiles(cfg, r)
 
-	home, _ := os.UserHomeDir()
+	home := "/home/testuser"
 	for _, pkg := range []string{"zsh", "git"} {
 		if !r.CalledWith("stow", "-d", dest, "-t", home, "-D", pkg) {
 			t.Errorf("expected stow -D for package %q", pkg)
@@ -309,7 +484,7 @@ func TestUninstallDotfiles_CloneOnlySkipsStow(t *testing.T) {
 
 	uninstallDotfiles(cfg, r)
 
-	home, _ := os.UserHomeDir()
+	home := "/home/testuser"
 	if r.CalledWith("stow", "-d", dest, "-t", home, "-D", "zsh") {
 		t.Error("stow -D should not be called for clone-only method")
 	}

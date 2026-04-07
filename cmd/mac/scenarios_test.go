@@ -361,7 +361,7 @@ func TestScenarioD_FullUninstall(t *testing.T) {
 	}
 
 	// Dotfiles unstowed.
-	home, _ := os.UserHomeDir()
+	home := "/home/testuser"
 	for _, pkg := range []string{"zsh", "git"} {
 		if !r.CalledWith("stow", "-d", dotfilesDest, "-t", home, "-D", pkg) {
 			t.Errorf("expected stow -D for package %q", pkg)
