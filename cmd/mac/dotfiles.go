@@ -5,6 +5,31 @@ import (
 	"path/filepath"
 )
 
+// checkStowConflicts walks pkgDir and returns paths in targetDir that are
+// regular files — these will block stow from creating symlinks.
+func checkStowConflicts(pkgDir, targetDir string) ([]string, error) {
+	var conflicts []string
+	err := filepath.Walk(pkgDir, func(path string, info os.FileInfo, err error) error {
+		if err != nil {
+			return err
+		}
+		if info.IsDir() {
+			return nil
+		}
+		rel, _ := filepath.Rel(pkgDir, path)
+		target := filepath.Join(targetDir, rel)
+		fi, err := os.Lstat(target)
+		if err != nil {
+			return nil // target doesn't exist — no conflict
+		}
+		if fi.Mode().IsRegular() {
+			conflicts = append(conflicts, target)
+		}
+		return nil
+	})
+	return conflicts, err
+}
+
 func applyDotfiles(cfg *Config, r Runner) {
 	if cfg.Dotfiles.Repo == "" {
 		return
@@ -40,11 +65,22 @@ func applyDotfiles(cfg *Config, r Runner) {
 			r.Run("brew", "install", "stow")
 		}
 
-		home, _ := os.UserHomeDir()
+		home := r.ExpandHome("~")
 		for _, pkg := range cfg.Dotfiles.StowPackages {
 			pkgDir := filepath.Join(dest, pkg)
 			if info, err := os.Stat(pkgDir); err != nil || !info.IsDir() {
 				Warn("Stow package directory not found: " + pkgDir)
+				continue
+			}
+
+			if conflicts, err := checkStowConflicts(pkgDir, home); err != nil {
+				Warn("Could not check stow conflicts for " + pkg + ": " + err.Error())
+			} else if len(conflicts) > 0 {
+				Warn(pkg + " has stow conflicts — back up these files before applying:")
+				for _, c := range conflicts {
+					Info("  mv " + c + " " + c + ".bak")
+				}
+				Warn("Skipping stow for " + pkg)
 				continue
 			}
 
@@ -68,7 +104,7 @@ func uninstallDotfiles(cfg *Config, r Runner) {
 	dest := r.ExpandHome(cfg.Dotfiles.Dest)
 
 	if cfg.Dotfiles.Method == "stow" {
-		home, _ := os.UserHomeDir()
+		home := r.ExpandHome("~")
 		for _, pkg := range cfg.Dotfiles.StowPackages {
 			Info("Unstowing " + pkg + " …")
 			if _, err := r.Run("stow", "-d", dest, "-t", home, "-D", pkg); err != nil {

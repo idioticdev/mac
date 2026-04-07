@@ -17,6 +17,7 @@ type FakeRunner struct {
 	responses map[string]response
 	whichMap  map[string]bool
 	calls     []string
+	homeDir   string
 }
 
 // NewFakeRunner constructs a FakeRunner with empty state.
@@ -24,7 +25,14 @@ func NewFakeRunner() *FakeRunner {
 	return &FakeRunner{
 		responses: make(map[string]response),
 		whichMap:  make(map[string]bool),
+		homeDir:   "/home/testuser",
 	}
+}
+
+// SetHome configures the directory returned by ExpandHome("~") and ExpandHome("~/...").
+func (f *FakeRunner) SetHome(dir string) *FakeRunner {
+	f.homeDir = dir
+	return f
 }
 
 // whenBuilder is a fluent builder for configuring responses.
@@ -111,10 +119,13 @@ func (f *FakeRunner) Which(name string) bool {
 	return result
 }
 
-// ExpandHome replaces a leading ~/ with /home/testuser/ for deterministic tests.
+// ExpandHome replaces a leading ~/ or bare ~ with the configured homeDir.
 func (f *FakeRunner) ExpandHome(path string) string {
+	if path == "~" {
+		return f.homeDir
+	}
 	if strings.HasPrefix(path, "~/") {
-		return "/home/testuser/" + path[2:]
+		return f.homeDir + "/" + path[2:]
 	}
 	return path
 }
