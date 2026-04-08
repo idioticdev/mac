@@ -1,7 +1,6 @@
 package main
 
 import (
-	"bufio"
 	"fmt"
 	"net/http"
 	"net/http/httptest"
@@ -10,6 +9,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/charmbracelet/huh"
 	"github.com/youruser/mac/cmd/mac/testutil"
 )
 
@@ -107,14 +107,34 @@ func TestRunInit_ExistingConfig_PreservesFileOnDecline(t *testing.T) {
 
 // ── promptDotfilesSetup ───────────────────────────────────────────────────────
 
-func fakeReader(input string) *bufio.Reader {
-	return bufio.NewReader(strings.NewReader(input))
+// slowReader wraps an io.Reader to return one byte per Read call, preventing
+// bufio.Scanner from pre-buffering past the current line. This lets multiple
+// huh fields share a single reader without the first field consuming all input.
+type slowReader struct{ r *strings.Reader }
+
+func (s *slowReader) Read(p []byte) (int, error) {
+	if len(p) == 0 {
+		return 0, nil
+	}
+	return s.r.Read(p[:1])
+}
+
+// testFormOpts returns huh form options that force accessible mode and inject
+// the given string as sequential stdin for all forms in a promptDotfilesSetup call.
+func testFormOpts(input string) []func(*huh.Form) {
+	r := &slowReader{strings.NewReader(input)}
+	return []func(*huh.Form){
+		func(f *huh.Form) {
+			f.WithAccessible(true)
+			f.WithInput(r)
+		},
+	}
 }
 
 func TestPromptDotfilesSetup_Skipped(t *testing.T) {
 	r := testutil.NewFakeRunner()
 	// User answers "n" — skip dotfiles.
-	result := promptDotfilesSetup(r, fakeReader("n\n"))
+	result := promptDotfilesSetup(r, testFormOpts("n\n")...)
 	if result != nil {
 		t.Errorf("expected nil when user skips, got %+v", result)
 	}
@@ -122,8 +142,8 @@ func TestPromptDotfilesSetup_Skipped(t *testing.T) {
 
 func TestPromptDotfilesSetup_EmptyRepo(t *testing.T) {
 	r := testutil.NewFakeRunner()
-	// User says yes but provides no URL.
-	result := promptDotfilesSetup(r, fakeReader("y\n\n"))
+	// User says yes then provides no URL — detail form submits empty repo.
+	result := promptDotfilesSetup(r, testFormOpts("y\n\n\n\n")...)
 	if result != nil {
 		t.Errorf("expected nil when repo URL is empty, got %+v", result)
 	}
@@ -132,7 +152,8 @@ func TestPromptDotfilesSetup_EmptyRepo(t *testing.T) {
 func TestPromptDotfilesSetup_HTTPSRepo_NoSSHSetup(t *testing.T) {
 	r := testutil.NewFakeRunner()
 	// HTTPS repo — ensureSSHForClone should not run ssh-keygen or ssh-add.
-	result := promptDotfilesSetup(r, fakeReader("y\nhttps://github.com/you/dotfiles.git\n\n\n"))
+	// Confirm: "y", then repo URL, dest (blank = default), stow pkgs (blank).
+	result := promptDotfilesSetup(r, testFormOpts("y\nhttps://github.com/you/dotfiles.git\n\n\n")...)
 	if result == nil {
 		t.Fatal("expected non-nil result for HTTPS repo")
 	}
@@ -153,7 +174,7 @@ func TestPromptDotfilesSetup_HTTPSRepo_NoSSHSetup(t *testing.T) {
 func TestPromptDotfilesSetup_CustomDestAndPackages(t *testing.T) {
 	r := testutil.NewFakeRunner()
 	input := "y\nhttps://github.com/you/dotfiles.git\n~/.config/dotfiles\nzsh, git, nvim\n"
-	result := promptDotfilesSetup(r, fakeReader(input))
+	result := promptDotfilesSetup(r, testFormOpts(input)...)
 	if result == nil {
 		t.Fatal("expected non-nil result")
 	}

@@ -1,13 +1,14 @@
 package main
 
 import (
-	"bufio"
 	"fmt"
 	"io"
 	"net/http"
 	"os"
 	"path/filepath"
 	"strings"
+
+	"github.com/charmbracelet/huh"
 )
 
 // defaultConfigPath returns ~/.config/mac/mac.toml.
@@ -55,14 +56,20 @@ func runInitPrompt(dest string) (string, error) {
 	Info("No config found at " + dest)
 	Info("Enter the raw URL to your mac.toml, or run: mac init")
 	Info("Example: https://raw.githubusercontent.com/you/dotfiles/main/mac.toml")
-	fmt.Print("\n  Config URL (or ENTER to abort): ")
 
-	reader := bufio.NewReader(os.Stdin)
-	line, err := reader.ReadString('\n')
-	if err != nil && err != io.EOF {
-		return "", fmt.Errorf("reading input: %w", err)
+	var url string
+	form := accessibleForm(huh.NewForm(
+		huh.NewGroup(
+			huh.NewInput().
+				Title("Config URL (leave blank to abort)").
+				Placeholder("https://raw.githubusercontent.com/you/dotfiles/main/mac.toml").
+				Value(&url),
+		),
+	))
+	if err := form.Run(); err != nil {
+		return "", fmt.Errorf("no config found — run: mac init")
 	}
-	url := strings.TrimSpace(line)
+	url = strings.TrimSpace(url)
 
 	if url == "" {
 		return "", fmt.Errorf("no config found — run: mac init")
@@ -122,33 +129,42 @@ func runInit(r Runner, outputPath, url string) {
 	// Warn if a config already exists.
 	if _, err := os.Stat(outputPath); err == nil {
 		Warn("Config already exists at " + outputPath)
-		fmt.Print("  Overwrite? [y/N] ")
-		reader := bufio.NewReader(os.Stdin)
-		line, _ := reader.ReadString('\n')
-		if strings.TrimSpace(strings.ToLower(line)) != "y" {
+		overwrite := false
+		overwriteForm := accessibleForm(huh.NewForm(
+			huh.NewGroup(
+				huh.NewConfirm().
+					Title("Overwrite existing config?").
+					Value(&overwrite),
+			),
+		))
+		if err := overwriteForm.Run(); err != nil || !overwrite {
 			Ok("Keeping existing config.")
 			printNextSteps(r, outputPath)
 			return
 		}
 	}
 
-	fmt.Println()
-	fmt.Println("  How would you like to create your mac.toml?")
-	fmt.Println()
-	fmt.Println("    [1] Download from a URL         (you have an existing config)")
-	fmt.Println("    [2] Generate from Homebrew state (recommended for existing machines)")
-	fmt.Println("    [3] Blank starter template       (start from scratch)")
-	fmt.Println()
-	fmt.Print("  Choice [1-3]: ")
-
-	reader := bufio.NewReader(os.Stdin)
-	line, _ := reader.ReadString('\n')
-	choice := strings.TrimSpace(line)
+	var choice string
+	choiceForm := accessibleForm(huh.NewForm(
+		huh.NewGroup(
+			huh.NewSelect[string]().
+				Title("How would you like to create your mac.toml?").
+				Options(
+					huh.NewOption("Download from a URL         (you have an existing config)", "url"),
+					huh.NewOption("Generate from Homebrew state (recommended for existing machines)", "brew"),
+					huh.NewOption("Blank starter template       (start from scratch)", "blank"),
+				).
+				Value(&choice),
+		),
+	))
+	if err := choiceForm.Run(); err != nil {
+		return
+	}
 
 	switch choice {
-	case "1":
+	case "url":
 		initFromURL(r, outputPath)
-	case "2":
+	case "brew":
 		initFromBrew(r, outputPath)
 	default:
 		initBlank(r, outputPath)
@@ -156,10 +172,19 @@ func runInit(r Runner, outputPath, url string) {
 }
 
 func initFromURL(r Runner, dest string) {
-	fmt.Print("\n  Config URL: ")
-	reader := bufio.NewReader(os.Stdin)
-	line, _ := reader.ReadString('\n')
-	url := strings.TrimSpace(line)
+	var url string
+	urlForm := accessibleForm(huh.NewForm(
+		huh.NewGroup(
+			huh.NewInput().
+				Title("Config URL").
+				Placeholder("https://raw.githubusercontent.com/you/dotfiles/main/mac.toml").
+				Value(&url),
+		),
+	))
+	if err := urlForm.Run(); err != nil {
+		return
+	}
+	url = strings.TrimSpace(url)
 	if url == "" {
 		Fail("No URL provided")
 		return
@@ -180,8 +205,6 @@ func initFromURL(r Runner, dest string) {
 }
 
 func initFromBrew(r Runner, dest string) {
-	reader := bufio.NewReader(os.Stdin)
-
 	Info("Reading current Homebrew state …")
 	toml := generateExportTOML(r)
 	if err := writeConfig(dest, []byte(toml)); err != nil {
@@ -191,7 +214,7 @@ func initFromBrew(r Runner, dest string) {
 	Ok("Config saved to " + dest)
 	Warn("Review the generated config — defaults and system sections are commented out.")
 
-	if df := promptDotfilesSetup(r, reader); df != nil {
+	if df := promptDotfilesSetup(r); df != nil {
 		if err := appendDotfilesToConfig(dest, df); err != nil {
 			Warn("Could not append dotfiles section: " + err.Error())
 		} else {
@@ -205,8 +228,6 @@ func initFromBrew(r Runner, dest string) {
 }
 
 func initBlank(r Runner, dest string) {
-	reader := bufio.NewReader(os.Stdin)
-
 	computerName, _ := r.Run("scutil", "--get", "ComputerName")
 	localHostname, _ := r.Run("scutil", "--get", "LocalHostName")
 	if computerName == "" {
@@ -216,7 +237,7 @@ func initBlank(r Runner, dest string) {
 		localHostname = computerName
 	}
 
-	df := promptDotfilesSetup(r, reader)
+	df := promptDotfilesSetup(r)
 
 	dotfilesSection := buildDotfilesSection(df)
 
@@ -269,35 +290,102 @@ type dotfilesSetup struct {
 	stowPkgs []string
 }
 
+// stdinByteReader wraps an io.Reader to return one byte per Read call.
+// huh's accessible mode creates a new bufio.Scanner per field — without this
+// wrapper, the first scanner consumes the entire pipe buffer, starving later
+// fields. Reading one byte at a time keeps each scanner from pre-buffering
+// beyond its own line.
+type stdinByteReader struct{ r io.Reader }
+
+func (s *stdinByteReader) Read(p []byte) (int, error) {
+	if len(p) == 0 {
+		return 0, nil
+	}
+	return s.r.Read(p[:1])
+}
+
+// isCharDevice reports whether src is a real terminal (character device).
+func isCharDevice(src io.Reader) bool {
+	if f, ok := src.(*os.File); ok {
+		fi, err := f.Stat()
+		return err == nil && fi.Mode()&os.ModeCharDevice != 0
+	}
+	return false
+}
+
 // promptDotfilesSetup asks whether the user has a dotfiles repo and collects
 // the URL, destination, and stow packages. It runs SSH setup inline so that
 // the first mac apply can clone without interruption. Returns nil if skipped.
-func promptDotfilesSetup(r Runner, reader *bufio.Reader) *dotfilesSetup {
-	fmt.Print("\n  Do you have a dotfiles repo? [y/N] ")
-	ans, _ := reader.ReadString('\n')
-	if strings.TrimSpace(strings.ToLower(ans)) != "y" {
+//
+// opts are applied to each huh.Form before Run() — useful in tests for
+// injecting an io.Reader via f.WithAccessible(true) and f.WithInput(r).
+func promptDotfilesSetup(r Runner, opts ...func(*huh.Form)) *dotfilesSetup {
+	// Default: when stdin is not a real TTY (e.g. a pipe in tests or CI),
+	// enable accessible mode and wrap stdin in a byte-at-a-time reader.
+	// The byte wrapper prevents huh's per-field bufio.Scanner from consuming
+	// input meant for later fields. opts (from tests) may override this.
+	defaultReader := func(f *huh.Form) {
+		stdin := os.Stdin
+		if !isCharDevice(stdin) {
+			f.WithAccessible(true)
+			f.WithInput(&stdinByteReader{stdin})
+		}
+	}
+
+	applyOpts := func(f *huh.Form) {
+		defaultReader(f)
+		for _, opt := range opts {
+			opt(f)
+		}
+	}
+
+	var hasDotfiles bool
+	confirmForm := huh.NewForm(
+		huh.NewGroup(
+			huh.NewConfirm().
+				Title("Do you have a dotfiles repo?").
+				Value(&hasDotfiles),
+		),
+	)
+	applyOpts(confirmForm)
+	if err := confirmForm.Run(); err != nil || !hasDotfiles {
 		return nil
 	}
 
-	fmt.Print("  Repo URL (e.g. git@github.com:you/dotfiles.git): ")
-	repoLine, _ := reader.ReadString('\n')
-	repo := strings.TrimSpace(repoLine)
+	var repo, dest, stowPkgsStr string
+	detailForm := huh.NewForm(
+		huh.NewGroup(
+			huh.NewInput().
+				Title("Repo URL").
+				Placeholder("git@github.com:you/dotfiles.git").
+				Value(&repo),
+			huh.NewInput().
+				Title("Destination").
+				Placeholder("~/.dotfiles").
+				Value(&dest),
+			huh.NewInput().
+				Title("Stow packages (comma-separated, or leave blank to skip)").
+				Value(&stowPkgsStr),
+		),
+	)
+	applyOpts(detailForm)
+	if err := detailForm.Run(); err != nil {
+		return nil
+	}
+
+	repo = strings.TrimSpace(repo)
 	if repo == "" {
 		Warn("No repo URL provided — skipping dotfiles setup")
 		return nil
 	}
 
-	fmt.Print("  Destination [~/.dotfiles]: ")
-	destLine, _ := reader.ReadString('\n')
-	dest := strings.TrimSpace(destLine)
+	dest = strings.TrimSpace(dest)
 	if dest == "" {
 		dest = "~/.dotfiles"
 	}
 
-	fmt.Print("  Stow packages (comma-separated, or ENTER to skip): ")
-	pkgsLine, _ := reader.ReadString('\n')
 	var stowPkgs []string
-	for _, p := range strings.Split(strings.TrimSpace(pkgsLine), ",") {
+	for _, p := range strings.Split(strings.TrimSpace(stowPkgsStr), ",") {
 		if p := strings.TrimSpace(p); p != "" {
 			stowPkgs = append(stowPkgs, p)
 		}
@@ -377,11 +465,15 @@ func printNextSteps(_ Runner, configPath string) {
 		fi, err := os.Stdin.Stat()
 		isTTY := err == nil && (fi.Mode()&os.ModeCharDevice) != 0
 		if isTTY {
-			reader := bufio.NewReader(os.Stdin)
-			fmt.Print("  Apply now? [Y/n] ")
-			answer, _ := reader.ReadString('\n')
-			answer = strings.TrimSpace(strings.ToLower(answer))
-			if answer == "" || answer == "y" || answer == "yes" {
+			applyNow := true
+			applyForm := huh.NewForm(
+				huh.NewGroup(
+					huh.NewConfirm().
+						Title("Apply now?").
+						Value(&applyNow),
+				),
+			)
+			if applyForm.Run() == nil && applyNow {
 				runApply(cfg)
 				fmt.Println()
 				return
@@ -428,10 +520,15 @@ func promptShellIntegration() {
 		return
 	}
 
-	fmt.Printf("\n  Add brew tracking to %s? [Y/n] ", rcPath)
-	reader := bufio.NewReader(os.Stdin)
-	answer, _ := reader.ReadString('\n')
-	if answer = strings.TrimSpace(strings.ToLower(answer)); answer == "n" || answer == "no" {
+	addShellIntegration := true
+	shellForm := accessibleForm(huh.NewForm(
+		huh.NewGroup(
+			huh.NewConfirm().
+				Title("Add brew tracking to " + rcPath + "?").
+				Value(&addShellIntegration),
+		),
+	))
+	if shellForm.Run() != nil || !addShellIntegration {
 		Info("Skipped. To add later: echo 'eval \"$(mac shell-init)\"' >> " + rcPath)
 		return
 	}

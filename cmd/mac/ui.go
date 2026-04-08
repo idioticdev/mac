@@ -3,8 +3,8 @@ package main
 import (
 	"fmt"
 	"os"
-	"strings"
 
+	"github.com/charmbracelet/huh"
 	"github.com/charmbracelet/lipgloss"
 	"github.com/charmbracelet/log"
 )
@@ -94,10 +94,30 @@ func Logger() *log.Logger {
 	return logger
 }
 
-// Confirm prints a [y/N] prompt and returns true only if the user types "y" or "yes".
+// accessibleForm enables accessible mode on form when os.Stdin is not a TTY
+// (e.g. a pipe in tests or CI). In accessible mode huh reads input line-by-line
+// from stdin rather than running a full terminal UI.
+func accessibleForm(form *huh.Form) *huh.Form {
+	fi, err := os.Stdin.Stat()
+	if err == nil && fi.Mode()&os.ModeCharDevice == 0 {
+		form.WithAccessible(true)
+	}
+	return form
+}
+
+// Confirm shows a huh confirm prompt and returns true only if the user confirms.
+// Defaults to false (No).
 func Confirm(prompt string) bool {
-	fmt.Fprintf(os.Stderr, "\n  %s %s [y/N] ", symbolWarn, prompt)
-	var response string
-	fmt.Scanln(&response) //nolint:errcheck
-	return strings.ToLower(strings.TrimSpace(response)) == "y"
+	var confirmed bool
+	form := accessibleForm(huh.NewForm(
+		huh.NewGroup(
+			huh.NewConfirm().
+				Title(prompt).
+				Value(&confirmed),
+		),
+	))
+	if err := form.Run(); err != nil {
+		return false
+	}
+	return confirmed
 }
